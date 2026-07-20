@@ -1140,6 +1140,7 @@ _G.HZPermissaoMinimaModulo = {
 
 function _G.HZNivelCargo(cargo)
     cargo = tostring(cargo or ""):lower()
+    if cargo:find("diretor", 1, true) then return 5, "Diretor" end
     if cargo:find("coorden", 1, true) then return 4, "Coordenador" end
     if cargo:find("admin", 1, true) then return 3, "Administrador" end
     if cargo:find("moder", 1, true) then return 2, "Moderador" end
@@ -2463,7 +2464,8 @@ local function getStaffSupportRole(cargo)
         return "ajudante"
     elseif lower:find("moderador") then
         return "moderador"
-    elseif lower:find("administrador") or lower:find("admin") or lower:find("coorden") then
+    elseif lower:find("administrador") or lower:find("admin")
+        or lower:find("coorden") or lower:find("diretor") then
         return "administrador"
     end
     return nil
@@ -5037,7 +5039,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.2",
+    versao = "1.3",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
