@@ -101,6 +101,9 @@ local ultimoIdTelado = "---"
 _G.HZAvisosAC = _G.HZAvisosAC or {
     aguardandoReport = false,
     prazoReport = 0,
+    solicitouLista = false,
+    prazoLista = 0,
+    dialogReportId = -1,
     ultimaChave = "",
     ultimoTempo = 0
 }
@@ -115,15 +118,49 @@ function _G.HZAvisosAC.enviar(mensagem, atraso)
 end
 
 function _G.HZAvisosAC.marcarReport()
-    _G.HZAvisosAC.aguardandoReport = true
-    -- A selecao de um report acontece logo depois de abrir a lista.
-    -- Uma janela curta evita que uma telagem manual posterior seja confundida com report.
-    _G.HZAvisosAC.prazoReport = (os.clock and os.clock() or 0) + 45
+    -- Abrir /reports nao significa que um report foi selecionado.
+    -- A autorizacao do /ac so acontece na resposta real do dialogo.
+    _G.HZAvisosAC.aguardandoReport = false
+    _G.HZAvisosAC.prazoReport = 0
+    _G.HZAvisosAC.solicitouLista = true
+    _G.HZAvisosAC.prazoLista = (os.clock and os.clock() or 0) + 8
+    _G.HZAvisosAC.dialogReportId = -1
 end
 
 function _G.HZAvisosAC.cancelarReport()
     _G.HZAvisosAC.aguardandoReport = false
     _G.HZAvisosAC.prazoReport = 0
+    _G.HZAvisosAC.solicitouLista = false
+    _G.HZAvisosAC.prazoLista = 0
+    _G.HZAvisosAC.dialogReportId = -1
+end
+
+function _G.HZAvisosAC.registrarDialogo(id, titulo, texto)
+    if not _G.HZAvisosAC.solicitouLista then return end
+    local agora = os.clock and os.clock() or 0
+    if agora > (_G.HZAvisosAC.prazoLista or 0) then
+        _G.HZAvisosAC.cancelarReport()
+        return
+    end
+    local conteudo = (tostring(titulo or "") .. " " .. tostring(texto or "")):lower()
+    if conteudo:find("report", 1, true) then
+        _G.HZAvisosAC.dialogReportId = tonumber(id) or -1
+    end
+end
+
+function _G.HZAvisosAC.responderDialogo(id, botao)
+    if tonumber(id) ~= tonumber(_G.HZAvisosAC.dialogReportId) then return end
+    local selecionou = tonumber(botao) == 1
+    _G.HZAvisosAC.solicitouLista = false
+    _G.HZAvisosAC.prazoLista = 0
+    _G.HZAvisosAC.dialogReportId = -1
+    if selecionou then
+        _G.HZAvisosAC.aguardandoReport = true
+        -- Tempo apenas para o servidor iniciar a telagem selecionada.
+        _G.HZAvisosAC.prazoReport = (os.clock and os.clock() or 0) + 8
+    else
+        _G.HZAvisosAC.cancelarReport()
+    end
 end
 
 function _G.HZAvisosAC.confirmarReport(nick, id)
@@ -1114,6 +1151,8 @@ local configSistema = {
     painelTvY = 220,
     monitoradosX = 780,
     monitoradosY = 220,
+    modsX = 360,
+    modsY = 180,
     modulos = {
         painel_tv = true,
         navegacao_tv = true,
@@ -1162,6 +1201,7 @@ end
 
 local ultimoSalvamentoConfig = 0
 local seletorPosCarregada = false
+local modsPosCarregada = false
 
 local seletorJogadorAberto = imgui.ImBool(false)
 local seletorJogadorOpcoes = {}
@@ -1543,6 +1583,9 @@ local function telarJogadorOnlinePelaTAB(id, nick)
     end
 
     nick = nick or sampGetPlayerNickname(id) or tostring(id)
+
+    -- Telagem pela TAB nunca pertence a /reports e nao pode gerar aviso /ac.
+    if _G.HZAvisosAC then _G.HZAvisosAC.cancelarReport() end
 
     lastTvRequestedId = id
     lastTvRequestedRG = nil
@@ -2396,6 +2439,15 @@ local idAtualN, ultimoCicloN = nil, nil
 local historicoA, histIndexA, histMaxA = {}, 0, 400
 local idAtualA, ultimoCicloA = nil, nil
 
+-- Mantido fora de setor_main para nao ultrapassar o limite de 60 upvalues do LuaJIT.
+function _G.HZResetarNavegacaoTV()
+    historicoN, histIndexN, idAtualN, ultimoCicloN = {}, 0, nil, nil
+    historicoA, histIndexA, idAtualA, ultimoCicloA = {}, 0, nil, nil
+    wasUpDown, wasDownDown, wasRightDown, wasLeftDown = false, false, false, false
+    _G.HZNavNovatoPendente = nil
+    _G.HZNavNovatoSuprimirErroAte = 0
+end
+
 -- ================== SISTEMA CÂMERA STAFF INTEGRADO ==================
 local CAMERA_CHAT_COLOR = -1
 local camOn = false
@@ -2748,6 +2800,18 @@ local function maybe_store_and_announce(rg, pid, nickCapturado)
 
         salvarRGNoBanco(rg, nome, pidFinal)
 
+        -- A navegacao de novatos pode usar a TAB apenas para descobrir o RG.
+        -- Assim que o RG chega, conclui a telagem pelo comando correto do servidor.
+        if _G.HZNavNovatoPendente
+            and pidFinal
+            and tonumber(_G.HZNavNovatoPendente.id) == tonumber(pidFinal) then
+            _G.HZNavNovatoPendente = nil
+            lua_thread.create(function()
+                wait(150)
+                sampSendChat("/tv " .. tostring(rg))
+            end)
+        end
+
         changed = true
 
         local lvl = pidFinal and (sampGetPlayerScore(pidFinal) or 0) or 0
@@ -2761,7 +2825,8 @@ local function ehNovato(id)
     if not id or not sampIsPlayerConnected(id) then return false end
     local lvl = sampGetPlayerScore(id)
     if lvl == nil then return false end
-    return lvl == 0
+    -- Para a navegacao, novato e todo jogador entre Level 0 e Level 30.
+    return tonumber(lvl) ~= nil and tonumber(lvl) >= 0 and tonumber(lvl) <= 30
 end
 
 local function addToCatalogN(id)
@@ -2792,7 +2857,19 @@ function _G.HZResolverRGNavegacao(id)
     if nick == "" then return nil end
 
     local chaveNick = compactarBuscaNome(nick)
-    local rg = rgChatPorNick[chaveNick]
+    local rg = rgCache[id]
+
+    -- Descarta cache do ID quando ele foi reutilizado por outro nick.
+    if rg and rgDatabase[tostring(rg)] and rgDatabase[tostring(rg)].nick then
+        if tostring(rgDatabase[tostring(rg)].nick):lower() ~= nick:lower() then
+            rg = nil
+            rgCache[id] = nil
+        end
+    end
+
+    if not rg or tostring(rg) == "" then
+        rg = rgChatPorNick[chaveNick]
+    end
 
     if not rg or tostring(rg) == "" then
         rg = HZ_buscarRGPorNickAtualExato(nick)
@@ -2826,10 +2903,17 @@ end
 local function telarIdN(id)
     if not id then return false end
     if not ehNovato(id) then
-        sampAddChatMessage("{FFA500}Ignorando "..tostring(id).." (nao e Level 0 agora).", -1)
+        sampAddChatMessage("{FFA500}Ignorando "..tostring(id).." (nao esta entre Level 0 e 30).", -1)
         return false
     end
-    return _G.HZTelarRGNavegacao(id)
+    if _G.HZTelarRGNavegacao(id) then return true end
+
+    -- Novatos frequentemente ainda nao existem no cache de RG.
+    -- Nesse caso usa o ID/Level da TAB para iniciar a telagem e capturar o RG.
+    local nick = tostring(sampGetPlayerNickname(id) or id)
+    _G.HZNavNovatoPendente = { id = id, inicio = os.clock and os.clock() or 0 }
+    _G.HZNavNovatoSuprimirErroAte = (os.clock and os.clock() or 0) + 6.0
+    return telarJogadorOnlinePelaTAB(id, nick)
 end
 
 local function getNovatosSorted()
@@ -2851,10 +2935,9 @@ local function pickNextByCycleN()
     for step=1,n do
         local idx = ((startPos + step - 1) % n) + 1
         local id = lst[idx]
-        if id ~= idAtualN and _G.HZResolverRGNavegacao(id) then return id end
+        if id ~= idAtualN then return id end
     end
-    if _G.HZResolverRGNavegacao(lst[1]) then return lst[1] end
-    return nil
+    return lst[1]
 end
 
 local function telarIdA(id, prefixoCor)
@@ -3316,6 +3399,7 @@ _G.HZModulosUI = {
 }
 
 function _G.HZFecharPainelMods()
+    salvarConfigSistema(true)
     _G.HZModsJanela.v = false
     imgui.ShowCursor = false
 
@@ -3341,6 +3425,7 @@ function _G.HZDefinirModulo(id, ativo)
         _G.PainelTVModule.setEnabled(ativo)
     elseif id == "navegacao_tv" then
         tvNovatosAtivo, tvTodosAtivo = ativo == true, ativo == true
+        if _G.HZResetarNavegacaoTV then _G.HZResetarNavegacaoTV() end
     elseif id == "monitoramento" and not ativo and _G.HZMonitorPanel then
         _G.HZMonitorPanel.aberto.v = false
     elseif id == "atendimento" and not ativo then
@@ -3365,12 +3450,26 @@ function _G.HZDesenharPainelMods()
     if not _G.HZModsJanela.v then return end
     local pushedColors, pushedVars = uiApplyWindowTheme()
     imgui.SetNextWindowSize(imgui.ImVec2(520, 500), imgui.Cond.Always)
+    if not modsPosCarregada then
+        imgui.SetNextWindowPos(imgui.ImVec2(
+            tonumber(configSistema.modsX) or 360,
+            tonumber(configSistema.modsY) or 180
+        ), imgui.Cond.Always)
+        modsPosCarregada = true
+    end
     local flags = 0
     if imgui.WindowFlags then
         if imgui.WindowFlags.NoResize then flags = flags + imgui.WindowFlags.NoResize end
         if imgui.WindowFlags.NoCollapse then flags = flags + imgui.WindowFlags.NoCollapse end
     end
     imgui.Begin("SETOR SEGURANCA - MODULOS", _G.HZModsJanela, flags)
+    local modsPos = imgui.GetWindowPos()
+    if modsPos and (math.abs((tonumber(configSistema.modsX) or 0) - modsPos.x) > 1
+        or math.abs((tonumber(configSistema.modsY) or 0) - modsPos.y) > 1) then
+        configSistema.modsX = math.floor(modsPos.x)
+        configSistema.modsY = math.floor(modsPos.y)
+        salvarConfigSistema(false)
+    end
     imgui.TextColored(UI_HZ.glow, "HORIZONTE ROLEPLAY  |  CENTRAL DE MODULOS")
     local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
     imgui.TextColored(UI_HZ.primary2, "CARGO IDENTIFICADO: " .. cargoNome)
@@ -3788,7 +3887,10 @@ local function setor_main()
     carregarCacheRG()
     carregarConfigSistema()
     _G.HZMonitorEtapa1.carregar()
-    sampAddChatMessage("{00FF00} [Sistema HZ1] - Versao Completa 1.0/2026 Ativa! by: Respected", -1)
+    sampAddChatMessage(
+        "{00FF00}[SETOR] Versao " .. tostring(_G.HZUpdaterPC.versao) .. " Ativa! Desenvolvido por Respected",
+        -1
+    )
 
     sampRegisterChatCommand("mods", function()
         if not _G.HZStaffLogada then
@@ -3820,6 +3922,7 @@ local function setor_main()
         end
         configSistema.modulos.navegacao_tv = true
         tvNovatosAtivo, tvTodosAtivo = true, true
+        if _G.HZResetarNavegacaoTV then _G.HZResetarNavegacaoTV() end
         salvarConfigSistema(true)
         sampAddChatMessage("{00FF00}TV ATIVADA - Novatos (↑/↓) e Todos (→/←).", -1)
     end)
@@ -3852,6 +3955,8 @@ local function setor_main()
         configSistema.painelTvY = 220
         configSistema.monitoradosX = 780
         configSistema.monitoradosY = 220
+        configSistema.modsX = 360
+        configSistema.modsY = 180
         if _G.HZMonitorPanel then
             _G.HZMonitorPanel.x = 780
             _G.HZMonitorPanel.y = 220
@@ -3859,6 +3964,7 @@ local function setor_main()
         end
         if _G.PainelTVSetSavedPos then _G.PainelTVSetSavedPos(20, 220) end
         seletorPosCarregada = false
+        modsPosCarregada = false
         salvarConfigSistema(true)
         sampAddChatMessage("{00FF7F}Posicoes dos paineis resetadas e salvas.", -1)
     end)
@@ -4648,6 +4754,23 @@ local function setor_onServerMessage(color, text)
     local cleanText = text:gsub("{%x%x%x%x%x%x}", ""):gsub("%s+", " "):trim()
     local dH = os.date("%d/%m/%Y - %H:%M:%S")
 
+    -- Ao descobrir o RG pela TAB, o servidor pode responder com este erro antes
+    -- de enviar "Nick ... | RG: ...". Oculta apenas essa resposta intermediaria.
+    do
+        local agora = os.clock and os.clock() or 0
+        local suprimirAte = tonumber(_G.HZNavNovatoSuprimirErroAte) or 0
+        local erroRGAusente = cleanText:lower():find("rg nao encontrado ou jogador offline", 1, true)
+
+        if erroRGAusente and agora <= suprimirAte then
+            return false
+        end
+
+        if agora > suprimirAte then
+            _G.HZNavNovatoPendente = nil
+            _G.HZNavNovatoSuprimirErroAte = 0
+        end
+    end
+
     -- Evita duplicar visualmente a linha do servidor: "Nick Nome | RG: 123".
     -- Mantem a primeira aparicao e bloqueia somente repeticao imediata do mesmo nick/RG.
     do
@@ -5086,7 +5209,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.5",
+    versao = "1.11",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
@@ -5258,6 +5381,18 @@ function samp.onSendCommand(cmd)
     end
     if r1 == false then return false end
     return r1
+end
+
+function samp.onShowDialog(id, style, title, button1, button2, text)
+    if _G.HZAvisosAC and _G.HZAvisosAC.registrarDialogo then
+        _G.HZAvisosAC.registrarDialogo(id, title, text)
+    end
+end
+
+function samp.onSendDialogResponse(id, button, listboxId, input)
+    if _G.HZAvisosAC and _G.HZAvisosAC.responderDialogo then
+        _G.HZAvisosAC.responderDialogo(id, button)
+    end
 end
 
 function samp.onServerMessage(color, text)
