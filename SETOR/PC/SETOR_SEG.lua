@@ -5037,9 +5037,9 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.1",
-    urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-seguranca-mobile/main/SETOR/PC/versao.txt",
-    urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-seguranca-mobile/main/SETOR/PC/SETOR_SEG.lua",
+    versao = "1.2",
+    urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
+    urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
 }
 
