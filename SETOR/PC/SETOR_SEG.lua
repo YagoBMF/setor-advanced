@@ -4215,6 +4215,20 @@ local function setor_onSendCommand(cmd)
             _G.HZMonitorEtapa1.inicializadoOnline = false
             _G.HZMonitorEtapa1.proximaVerificacao = 0
 
+            -- /mods e todos os recursos administrativos ficam bloqueados
+            -- imediatamente apos /da, sem depender do texto de resposta do servidor.
+            _G.HZStaffLogada = false
+            cargoAdmin, nomeAdmin = "Desconhecido", ""
+            _G.HZFecharPainelMods()
+            if _G.HZMonitorPanel then _G.HZMonitorPanel.aberto.v = false end
+            tvNovatosAtivo, tvTodosAtivo = false, false
+            stopStaffSaciarme()
+            stopStaffSupport()
+            if camOn then camDisable() end
+            if _G.PainelTVModule and _G.PainelTVModule.setEnabled then
+                _G.PainelTVModule.setEnabled(false)
+            end
+
             sampAddChatMessage(
                 "{FFFF00}[MONITOR] Modo admin encerrado. Alertas pausados.",
                 -1
@@ -4706,6 +4720,39 @@ local function setor_onServerMessage(color, text)
         end
     end
 
+    -- Formato alternativo usado por Coordenador e Diretor:
+    -- "Ola Diretor(a) Nome, voce logou na administracao com sucesso!"
+    if not _G.HZStaffLogada then
+        local cargoSuperior, nomeSuperior = cleanText:match(
+            "^[Oo]la%s+([^%s]+)%s+([%a%d_]+),%s+voce%s+logou%s+na%s+administra"
+        )
+        if cargoSuperior and nomeSuperior then
+            local nivelSuperior, cargoNomeSuperior = _G.HZNivelCargo(cargoSuperior)
+            local okMeuId, meuId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+            local meuNick = okMeuId and tostring(sampGetPlayerNickname(meuId) or "") or ""
+
+            if nivelSuperior >= 3
+                and meuNick ~= ""
+                and tostring(nomeSuperior):lower() == meuNick:lower() then
+                cargoAdmin, nomeAdmin = cargoSuperior, nomeSuperior
+                _G.HZStaffLogada = true
+                _G.HZMonitorEtapa1.ativarEListar()
+                stopStaffSaciarme()
+                stopStaffSupport()
+
+                if _G.HZModuloAtivo("automacoes_staff") then
+                    startStaffSaciarme()
+                    startStaffSupport(cargoAdmin)
+                end
+
+                sampAddChatMessage(
+                    "{48C6FF}[CARGO] Identificado como " .. cargoNomeSuperior .. ". Permissoes completas aplicadas.",
+                    -1
+                )
+            end
+        end
+    end
+
     if cleanText:find("ADMIN: O%(A%) (.-) (.-)%[(%d+)%] saiu da staff") then
         local _, nomeSaida = cleanText:match("ADMIN: O%(A%) (.-) (.-)%[(%d+)%] saiu da staff")
         local okMeuId, meuId = sampGetPlayerIdByCharHandle(PLAYER_PED)
@@ -5039,7 +5086,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.3",
+    versao = "1.5",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
