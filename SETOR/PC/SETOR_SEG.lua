@@ -1201,7 +1201,7 @@ end
 
 local ultimoSalvamentoConfig = 0
 local seletorPosCarregada = false
-local modsPosCarregada = false
+_G.HZModsPosCarregada = _G.HZModsPosCarregada or false
 
 local seletorJogadorAberto = imgui.ImBool(false)
 local seletorJogadorOpcoes = {}
@@ -1289,11 +1289,10 @@ local function aplicarConfigSistema()
     for id, padrao in pairs(_G.HZModulosPadrao) do
         if configSistema.modulos[id] == nil then configSistema.modulos[id] = padrao end
     end
-    -- A Central /mods e a fonte principal do estado da navegacao.
-    -- Configuracoes antigas podiam manter estes dois campos falsos mesmo com o modulo ativo.
-    local navegacaoLigada = configSistema.modulos.navegacao_tv ~= false
-    tvNovatosAtivo = navegacaoLigada
-    tvTodosAtivo = navegacaoLigada
+    -- O /mods apenas libera o recurso. A navegacao sempre inicia parada
+    -- e somente o comando /hz1 ativa os atalhos pelas setas.
+    tvNovatosAtivo = false
+    tvTodosAtivo = false
     v_altura_tapa = tostring(configSistema.v_altura_tapa or v_altura_tapa or "1")
 end
 
@@ -3312,14 +3311,14 @@ end
 -- Nao altera logica, comandos, cache, TV ou webhooks.
 -- ============================================================
 local UI_HZ = {
-    bg        = imgui.ImVec4(0.05, 0.07, 0.10, 0.94),
-    bg2       = imgui.ImVec4(0.08, 0.11, 0.16, 0.96),
-    panel     = imgui.ImVec4(0.07, 0.10, 0.15, 0.95),
-    card      = imgui.ImVec4(0.09, 0.13, 0.19, 0.92),
-    cardHover = imgui.ImVec4(0.02, 0.44, 0.67, 0.90),
-    primary   = imgui.ImVec4(0.00, 0.44, 0.67, 1.00), -- #016FAA
-    primary2  = imgui.ImVec4(0.16, 0.66, 0.91, 1.00), -- #2AA9E8
-    glow      = imgui.ImVec4(0.28, 0.78, 1.00, 1.00), -- #48C6FF
+    bg        = imgui.ImVec4(0.025, 0.035, 0.055, 1.00),
+    bg2       = imgui.ImVec4(0.045, 0.065, 0.095, 1.00),
+    panel     = imgui.ImVec4(0.055, 0.080, 0.115, 1.00),
+    card      = imgui.ImVec4(0.065, 0.095, 0.140, 1.00),
+    cardHover = imgui.ImVec4(0.03, 0.25, 0.36, 0.82),
+    primary   = imgui.ImVec4(0.02, 0.25, 0.37, 0.78),
+    primary2  = imgui.ImVec4(0.08, 0.48, 0.68, 0.86),
+    glow      = imgui.ImVec4(0.20, 0.65, 0.86, 0.90),
     danger    = imgui.ImVec4(0.78, 0.12, 0.18, 0.95),
     text      = imgui.ImVec4(0.95, 0.97, 1.00, 1.00),
     muted     = imgui.ImVec4(0.66, 0.71, 0.78, 1.00),
@@ -3389,13 +3388,14 @@ end
 
 -- Central de modulos: cada alternancia entra em vigor no mesmo frame e fica salva.
 _G.HZModsJanela = _G.HZModsJanela or imgui.ImBool(false)
+_G.HZModsPagina = _G.HZModsPagina or "GERAL"
 _G.HZModulosUI = {
-    { "painel_tv", "PAINEL TV", "Painel de telagem, punicoes e status do jogador." },
-    { "navegacao_tv", "NAVEGACAO TV", "Atalhos de novatos e todos pelas setas." },
-    { "monitoramento", "MONITORAMENTO", "Alertas e lista de jogadores monitorados." },
-    { "atendimento", "ATENDIMENTO", "Cronometro e painel visual de suporte." },
-    { "camera_staff", "CAMERA STAFF", "Camera livre e comandos /hz, /hzstaff e /map." },
-    { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas durante o modo staff." }
+    { "painel_tv", "PAINEL TV", "Telagem, punicoes e status." },
+    { "navegacao_tv", "NAVEGACAO TV", "Atalhos de navegacao pelas setas." },
+    { "monitoramento", "MONITORAMENTO", "Alertas e jogadores monitorados." },
+    { "atendimento", "ATENDIMENTO", "Cronometro visual de suporte." },
+    { "camera_staff", "CAMERA STAFF", "Camera livre e comandos staff." },
+    { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." }
 }
 
 function _G.HZFecharPainelMods()
@@ -3424,7 +3424,8 @@ function _G.HZDefinirModulo(id, ativo)
     if id == "painel_tv" and _G.PainelTVModule and _G.PainelTVModule.setEnabled then
         _G.PainelTVModule.setEnabled(ativo)
     elseif id == "navegacao_tv" then
-        tvNovatosAtivo, tvTodosAtivo = ativo == true, ativo == true
+        -- Alternar o modulo nunca inicia a navegacao automaticamente.
+        tvNovatosAtivo, tvTodosAtivo = false, false
         if _G.HZResetarNavegacaoTV then _G.HZResetarNavegacaoTV() end
     elseif id == "monitoramento" and not ativo and _G.HZMonitorPanel then
         _G.HZMonitorPanel.aberto.v = false
@@ -3449,20 +3450,55 @@ end
 function _G.HZDesenharPainelMods()
     if not _G.HZModsJanela.v then return end
     local pushedColors, pushedVars = uiApplyWindowTheme()
-    imgui.SetNextWindowSize(imgui.ImVec2(520, 500), imgui.Cond.Always)
-    if not modsPosCarregada then
-        imgui.SetNextWindowPos(imgui.ImVec2(
-            tonumber(configSistema.modsX) or 360,
-            tonumber(configSistema.modsY) or 180
-        ), imgui.Cond.Always)
-        modsPosCarregada = true
-    end
     local flags = 0
     if imgui.WindowFlags then
         if imgui.WindowFlags.NoResize then flags = flags + imgui.WindowFlags.NoResize end
         if imgui.WindowFlags.NoCollapse then flags = flags + imgui.WindowFlags.NoCollapse end
+        if imgui.WindowFlags.NoTitleBar then flags = flags + imgui.WindowFlags.NoTitleBar end
+        if imgui.WindowFlags.NoScrollbar then flags = flags + imgui.WindowFlags.NoScrollbar end
     end
-    imgui.Begin("SETOR SEGURANCA - MODULOS", _G.HZModsJanela, flags)
+
+    -- Sombra externa em camadas: simula um desfoque gaussiano sem shader externo.
+    local shadowFlags = flags
+    if imgui.WindowFlags then
+        if imgui.WindowFlags.NoInputs then shadowFlags = shadowFlags + imgui.WindowFlags.NoInputs end
+        if imgui.WindowFlags.NoMove then shadowFlags = shadowFlags + imgui.WindowFlags.NoMove end
+        if imgui.WindowFlags.NoSavedSettings then shadowFlags = shadowFlags + imgui.WindowFlags.NoSavedSettings end
+        if imgui.WindowFlags.NoBringToFrontOnFocus then
+            shadowFlags = shadowFlags + imgui.WindowFlags.NoBringToFrontOnFocus
+        end
+    end
+    local sombraCamadas = {
+        { 18, 0.025 },
+        { 14, 0.035 },
+        { 10, 0.050 },
+        {  6, 0.065 }
+    }
+    local sombraRound = uiPushVar(imgui.StyleVar and imgui.StyleVar.WindowRounding, 14)
+    for i, camada in ipairs(sombraCamadas) do
+        local alcance, alpha = camada[1], camada[2]
+        local sombraCor = uiPushColor(imgui.Col and imgui.Col.WindowBg, imgui.ImVec4(0, 0, 0, alpha))
+        sombraCor = sombraCor + uiPushColor(imgui.Col and imgui.Col.Border, imgui.ImVec4(0, 0, 0, 0))
+        imgui.SetNextWindowPos(imgui.ImVec2(
+            (tonumber(configSistema.modsX) or 360) - alcance,
+            (tonumber(configSistema.modsY) or 180) - alcance
+        ), imgui.Cond.Always)
+        imgui.SetNextWindowSize(imgui.ImVec2(800 + alcance * 2, 565 + alcance * 2), imgui.Cond.Always)
+        imgui.Begin("##setor_mods_sombra_" .. tostring(i), nil, shadowFlags)
+        imgui.End()
+        uiPopColor(sombraCor)
+    end
+    uiPopVar(sombraRound)
+
+    imgui.SetNextWindowSize(imgui.ImVec2(800, 565), imgui.Cond.Always)
+    if not _G.HZModsPosCarregada then
+        imgui.SetNextWindowPos(imgui.ImVec2(
+            tonumber(configSistema.modsX) or 360,
+            tonumber(configSistema.modsY) or 180
+        ), imgui.Cond.Always)
+        _G.HZModsPosCarregada = true
+    end
+    imgui.Begin("SETOR ADVANCED  |  /MODS", _G.HZModsJanela, flags)
     local modsPos = imgui.GetWindowPos()
     if modsPos and (math.abs((tonumber(configSistema.modsX) or 0) - modsPos.x) > 1
         or math.abs((tonumber(configSistema.modsY) or 0) - modsPos.y) > 1) then
@@ -3470,31 +3506,155 @@ function _G.HZDesenharPainelMods()
         configSistema.modsY = math.floor(modsPos.y)
         salvarConfigSistema(false)
     end
-    imgui.TextColored(UI_HZ.glow, "HORIZONTE ROLEPLAY  |  CENTRAL DE MODULOS")
-    local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
-    imgui.TextColored(UI_HZ.primary2, "CARGO IDENTIFICADO: " .. cargoNome)
-    imgui.TextColored(UI_HZ.muted, "As permissoes sao aplicadas automaticamente conforme o cargo.")
-    imgui.Separator()
-    imgui.BeginChild("##mods_lista", imgui.ImVec2(0, 385), true)
-    for i, item in ipairs(_G.HZModulosUI) do
-        local id, titulo, descricao = item[1], item[2], item[3]
-        local valor = imgui.ImBool(_G.HZModuloAtivo(id))
-        if imgui.Checkbox(titulo .. "##mod_" .. id, valor) then
-            if _G.HZDefinirModulo(id, valor.v) then
-                sampAddChatMessage((valor.v and "{3EDC81}[MODS] Ativado: " or "{FF6B6B}[MODS] Desativado: ") .. titulo, -1)
-            end
-        end
-        imgui.SameLine()
-        local permitido = _G.HZTemPermissaoModulo(id)
-        local statusModulo = permitido and (_G.HZModuloAtivo(id) and "ATIVO" or "INATIVO") or "BLOQUEADO"
-        imgui.TextColored(_G.HZModuloAtivo(id) and UI_HZ.green or UI_HZ.danger, statusModulo)
-        imgui.TextColored(UI_HZ.muted, descricao)
-        if i < #_G.HZModulosUI then imgui.Separator() end
-    end
-    imgui.EndChild()
-    if imgui.Button("FECHAR", imgui.ImVec2(140, 30)) then
+    local headerDL = imgui.GetWindowDrawList()
+    local headerMin = imgui.ImVec2(modsPos.x, modsPos.y)
+    local headerMax = imgui.ImVec2(modsPos.x + 800, modsPos.y + 54)
+    headerDL:AddRectFilledMultiColor(
+        headerMin, headerMax,
+        imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.00, 0.34, 0.62, 1.00)),
+        imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.00, 0.62, 0.92, 1.00)),
+        imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.00, 0.30, 0.55, 1.00)),
+        imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.01, 0.12, 0.23, 1.00))
+    )
+    headerDL:AddText(imgui.ImVec2(modsPos.x + 22, modsPos.y + 12), 0xFFFFFFFF, "SETOR ADVANCED")
+    headerDL:AddText(imgui.ImVec2(modsPos.x + 22, modsPos.y + 30), 0xBFFFFFFF, "CENTRAL ADMINISTRATIVA  /MODS")
+    headerDL:AddCircleFilled(imgui.ImVec2(modsPos.x + 765, modsPos.y + 27), 15, 0x55203040, 24)
+    headerDL:AddText(imgui.ImVec2(modsPos.x + 761, modsPos.y + 19), 0xFFFFFFFF, "X")
+    imgui.SetCursorScreenPos(imgui.ImVec2(modsPos.x + 750, modsPos.y + 12))
+    if imgui.InvisibleButton("##mods_fechar_topo", imgui.ImVec2(30, 30)) then
         _G.HZFecharPainelMods()
     end
+    imgui.SetCursorScreenPos(imgui.ImVec2(modsPos.x + 12, modsPos.y + 66))
+    local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
+    local okStaffId, staffId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    local staffNome = okStaffId and tostring(sampGetPlayerNickname(staffId) or "Staff") or "Staff"
+
+    -- Navegacao lateral no estilo de uma central administrativa.
+    imgui.BeginChild("##mods_sidebar", imgui.ImVec2(190, 0), true)
+    for _, pagina in ipairs({ "GERAL", "PAINEIS", "FERRAMENTAS" }) do
+        local selecionada = _G.HZModsPagina == pagina
+        local corBotao = selecionada and UI_HZ.primary or UI_HZ.card
+        local pc = uiPushColor(imgui.Col and imgui.Col.Button, corBotao)
+        pc = pc + uiPushColor(imgui.Col and imgui.Col.ButtonHovered, UI_HZ.cardHover)
+        if imgui.Button((selecionada and ">  " or "   ") .. pagina .. "##pagina_" .. pagina,
+            imgui.ImVec2(164, 36)) then
+            _G.HZModsPagina = pagina
+        end
+        uiPopColor(pc)
+    end
+
+    -- Perfil fixo no rodape, desenhado sem imagem externa.
+    local perfilPos = imgui.GetWindowPos()
+    local perfilTam = imgui.GetWindowSize()
+    local perfilDL = imgui.GetWindowDrawList()
+    local perfilY = perfilPos.y + perfilTam.y - 78
+    perfilDL:AddRectFilled(imgui.ImVec2(perfilPos.x + 10, perfilY - 10),
+        imgui.ImVec2(perfilPos.x + perfilTam.x - 10, perfilY - 8),
+        imgui.ColorConvertFloat4ToU32(UI_HZ.primary), 1, 15)
+    perfilDL:AddCircleFilled(imgui.ImVec2(perfilPos.x + 35, perfilY + 25), 23,
+        imgui.ColorConvertFloat4ToU32(UI_HZ.primary), 28)
+    perfilDL:AddCircleFilled(imgui.ImVec2(perfilPos.x + 35, perfilY + 25), 18,
+        imgui.ColorConvertFloat4ToU32(UI_HZ.bg2), 28)
+    perfilDL:AddText(imgui.ImVec2(perfilPos.x + 27, perfilY + 17), 0xFFFFFFFF,
+        tostring(staffNome):sub(1, 2):upper())
+    perfilDL:AddText(imgui.ImVec2(perfilPos.x + 68, perfilY + 7), 0xFFFFFFFF, staffNome)
+    perfilDL:AddText(imgui.ImVec2(perfilPos.x + 68, perfilY + 32),
+        imgui.ColorConvertFloat4ToU32(UI_HZ.glow), cargoNome)
+    imgui.EndChild()
+
+    imgui.SameLine()
+    imgui.BeginChild("##mods_conteudo", imgui.ImVec2(0, 0), false)
+    imgui.TextColored(UI_HZ.glow, "CENTRAL DE CONTROLE")
+    imgui.TextColored(UI_HZ.text, _G.HZModsPagina)
+    imgui.TextColored(UI_HZ.muted, "Clique em um cartao para ativar ou desativar a funcao.")
+    imgui.Separator()
+    imgui.Spacing()
+
+    local itensPagina = {}
+    for _, item in ipairs(_G.HZModulosUI) do
+        local id = item[1]
+        local mostrar = _G.HZModsPagina == "GERAL"
+            or (_G.HZModsPagina == "PAINEIS" and
+                (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
+            or (_G.HZModsPagina == "FERRAMENTAS" and
+                (id == "camera_staff" or id == "automacoes_staff"))
+        if mostrar then table.insert(itensPagina, item) end
+    end
+
+    for i, item in ipairs(itensPagina) do
+        local id, titulo, descricao = item[1], item[2], item[3]
+        local permitido = _G.HZTemPermissaoModulo(id)
+        local moduloAtivo = _G.HZModuloAtivo(id)
+        local statusModulo = permitido and (moduloAtivo and "ATIVO" or "DESATIVADO") or "BLOQUEADO"
+        local corCard = moduloAtivo and UI_HZ.primary or (permitido and UI_HZ.card or UI_HZ.bg2)
+        local corHover = permitido and UI_HZ.cardHover or UI_HZ.bg2
+
+        local cardPos = imgui.GetCursorScreenPos()
+        local cardSize = imgui.ImVec2(270, 99)
+        local clicouCard = imgui.InvisibleButton("##acao_" .. id, cardSize)
+        local cardHover = imgui.IsItemHovered()
+        local dl = imgui.GetWindowDrawList()
+        local cardFim = imgui.ImVec2(cardPos.x + cardSize.x, cardPos.y + cardSize.y)
+        local cardColor = cardHover and imgui.ImVec4(0.045, 0.22, 0.31, 0.88) or corCard
+        dl:AddRectFilled(imgui.ImVec2(cardPos.x + 3, cardPos.y + 5),
+            imgui.ImVec2(cardFim.x + 3, cardFim.y + 5), 0x55000000, 10, 15)
+        dl:AddRectFilled(cardPos, cardFim, imgui.ColorConvertFloat4ToU32(cardColor), 10, 15)
+        dl:AddRectFilled(cardPos, imgui.ImVec2(cardPos.x + 5, cardFim.y),
+            imgui.ColorConvertFloat4ToU32(moduloAtivo and UI_HZ.glow or UI_HZ.primary), 10, 5)
+        dl:AddCircleFilled(imgui.ImVec2(cardPos.x + 31, cardPos.y + 31), 17,
+            imgui.ColorConvertFloat4ToU32(moduloAtivo and UI_HZ.primary2 or UI_HZ.bg2), 24)
+        dl:AddText(imgui.ImVec2(cardPos.x + 22, cardPos.y + 23), 0xFFFFFFFF,
+            tostring(titulo):sub(1, 2))
+        local tituloTam = imgui.CalcTextSize(titulo)
+        local statusTam = imgui.CalcTextSize(statusModulo)
+        local descricaoTam = imgui.CalcTextSize(descricao)
+        dl:AddText(imgui.ImVec2(cardPos.x + (cardSize.x - tituloTam.x) / 2, cardPos.y + 17),
+            0xFFFFFFFF, titulo)
+        dl:AddText(imgui.ImVec2(cardPos.x + (cardSize.x - statusTam.x) / 2, cardPos.y + 38),
+            imgui.ColorConvertFloat4ToU32(moduloAtivo and UI_HZ.green or (permitido and UI_HZ.danger or UI_HZ.muted)),
+            statusModulo)
+        dl:AddText(imgui.ImVec2(cardPos.x + (cardSize.x - descricaoTam.x) / 2, cardPos.y + 72),
+            0xFFB8C3D1, descricao)
+
+        -- Interruptor desenhado, sem imagem ou biblioteca externa.
+        local swX, swY = cardPos.x + 211, cardPos.y + 25
+        dl:AddRectFilled(imgui.ImVec2(swX, swY), imgui.ImVec2(swX + 42, swY + 22),
+            imgui.ColorConvertFloat4ToU32(moduloAtivo and UI_HZ.primary2 or UI_HZ.bg2), 11, 15)
+        dl:AddCircleFilled(imgui.ImVec2(swX + (moduloAtivo and 31 or 11), swY + 11), 8,
+            0xFFFFFFFF, 20)
+        if cardHover then
+            dl:AddRect(cardPos, cardFim, imgui.ColorConvertFloat4ToU32(UI_HZ.glow), 10, 15, 1.5)
+        end
+
+        if clicouCard then
+            if _G.HZDefinirModulo(id, not moduloAtivo) then
+                sampAddChatMessage((not moduloAtivo and "{3EDC81}[MODS] Ativado: " or "{FF6B6B}[MODS] Desativado: ") .. titulo, -1)
+            end
+        end
+
+        if i % 2 == 1 and i < #itensPagina then
+            imgui.SameLine()
+        elseif i < #itensPagina then
+            imgui.Spacing()
+        end
+    end
+
+    imgui.Separator()
+    local fc = uiPushColor(imgui.Col and imgui.Col.Button, UI_HZ.primary)
+    fc = fc + uiPushColor(imgui.Col and imgui.Col.ButtonHovered, UI_HZ.primary2)
+    local rodapePos = imgui.GetCursorScreenPos()
+    if imgui.Button("FECHAR PAINEL", imgui.ImVec2(170, 34)) then
+        _G.HZFecharPainelMods()
+    end
+    uiPopColor(fc)
+    local textoSalvamento = "SALVAMENTO AUTOMATICO ATIVO"
+    local textoSalvamentoTam = imgui.CalcTextSize(textoSalvamento)
+    imgui.GetWindowDrawList():AddText(
+        imgui.ImVec2(rodapePos.x + 180, rodapePos.y + (34 - textoSalvamentoTam.y) / 2),
+        imgui.ColorConvertFloat4ToU32(UI_HZ.muted),
+        textoSalvamento
+    )
+    imgui.EndChild()
     imgui.End()
     uiEndWindowTheme(pushedColors, pushedVars)
 
@@ -3920,7 +4080,6 @@ local function setor_main()
             sampAddChatMessage("{FF6B6B}[MODS] Navegacao TV esta desligada. Use /mods para ativar.", -1)
             return
         end
-        configSistema.modulos.navegacao_tv = true
         tvNovatosAtivo, tvTodosAtivo = true, true
         if _G.HZResetarNavegacaoTV then _G.HZResetarNavegacaoTV() end
         salvarConfigSistema(true)
@@ -3928,8 +4087,8 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("hz0", function()
-        configSistema.modulos.navegacao_tv = false
         tvNovatosAtivo, tvTodosAtivo = false, false
+        if _G.HZResetarNavegacaoTV then _G.HZResetarNavegacaoTV() end
         salvarConfigSistema(true)
         sampAddChatMessage("{FF0000}TV DESATIVADA.", -1)
     end)
@@ -3964,7 +4123,7 @@ local function setor_main()
         end
         if _G.PainelTVSetSavedPos then _G.PainelTVSetSavedPos(20, 220) end
         seletorPosCarregada = false
-        modsPosCarregada = false
+        _G.HZModsPosCarregada = false
         salvarConfigSistema(true)
         sampAddChatMessage("{00FF7F}Posicoes dos paineis resetadas e salvas.", -1)
     end)
@@ -5209,7 +5368,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.11",
+    versao = "1.26",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
