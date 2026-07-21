@@ -8,6 +8,9 @@ do
 -- integrado: script_author removido
 require "lib.moonloader"
 local imgui = require "imgui"
+-- O /mods usa mimgui quando a biblioteca estiver instalada. O pcall mantem
+-- o restante do mod funcionando normalmente em PCs que ainda nao a possuem.
+_G.HZMimguiOk, _G.HZMimgui = pcall(require, "mimgui")
 local encoding = require "encoding"
 encoding.default = "CP1252"
 u8 = encoding.UTF8
@@ -3515,7 +3518,12 @@ end
 function _G.HZDesenharPainelMods()
     if not _G.HZModsJanela.v then return end
     local versaoMoonLoader = tonumber(getMoonloaderVersion and getMoonloaderVersion() or 26) or 26
-    if configSistema.modsModoSeguro == true or versaoMoonLoader <= 26 then
+    -- Quando disponivel, o painel principal e renderizado exclusivamente pelo
+    -- callback do mimgui. Nao desenhar a mesma janela no ImGui antigo.
+    if _G.HZMimguiOk and configSistema.modsModoSeguro ~= true and versaoMoonLoader > 26 then
+        return
+    end
+    if configSistema.modsModoSeguro == true or versaoMoonLoader <= 26 or not _G.HZMimguiOk then
         return _G.HZDesenharPainelModsCompat()
     end
     local pushedColors, pushedVars = uiApplyWindowTheme()
@@ -3699,6 +3707,129 @@ function _G.HZDesenharPainelMods()
 
     -- Trata tambem o X nativo da barra da janela.
     if not _G.HZModsJanela.v then _G.HZFecharPainelMods() end
+end
+
+-- Painel /mods moderno. Usa somente widgets oficiais do mimgui para evitar as
+-- chamadas de DrawList do ImGui antigo que fechavam o SA-MP em alguns PCs.
+function _G.HZDesenharPainelModsMimgui()
+    if not _G.HZMimguiOk or not _G.HZModsJanela.v then return end
+    local mi = _G.HZMimgui
+    local flags = mi.WindowFlags.NoResize + mi.WindowFlags.NoCollapse
+    mi.SetNextWindowSize(mi.ImVec2(760, 520), mi.Cond.Always)
+    if not _G.HZModsPosCarregadaMimgui then
+        mi.SetNextWindowPos(mi.ImVec2(
+            tonumber(configSistema.modsX) or 360,
+            tonumber(configSistema.modsY) or 180
+        ), mi.Cond.Always)
+        _G.HZModsPosCarregadaMimgui = true
+    end
+
+    mi.PushStyleVar(mi.StyleVar.WindowRounding, 10)
+    mi.PushStyleVar(mi.StyleVar.FrameRounding, 7)
+    mi.PushStyleVar(mi.StyleVar.ItemSpacing, mi.ImVec2(9, 8))
+    mi.PushStyleColor(mi.Col.WindowBg, mi.ImVec4(0.015, 0.025, 0.045, 0.98))
+    mi.PushStyleColor(mi.Col.ChildBg, mi.ImVec4(0.025, 0.045, 0.075, 0.96))
+    mi.PushStyleColor(mi.Col.Border, mi.ImVec4(0.08, 0.55, 0.78, 0.65))
+    mi.PushStyleColor(mi.Col.Button, mi.ImVec4(0.025, 0.20, 0.31, 0.92))
+    mi.PushStyleColor(mi.Col.ButtonHovered, mi.ImVec4(0.03, 0.38, 0.56, 1.00))
+    mi.PushStyleColor(mi.Col.ButtonActive, mi.ImVec4(0.02, 0.52, 0.76, 1.00))
+
+    mi.Begin("SETOR ADVANCED  |  /MODS##mimgui", nil, flags)
+    local pos = mi.GetWindowPos()
+    if pos and (math.abs((tonumber(configSistema.modsX) or 0) - pos.x) > 1
+        or math.abs((tonumber(configSistema.modsY) or 0) - pos.y) > 1) then
+        configSistema.modsX = math.floor(pos.x)
+        configSistema.modsY = math.floor(pos.y)
+        salvarConfigSistema(false)
+    end
+
+    mi.TextColored(mi.ImVec4(0.15, 0.72, 1.00, 1.00), "SETOR ADVANCED")
+    mi.SameLine()
+    mi.TextColored(mi.ImVec4(0.62, 0.70, 0.80, 1.00), "CENTRAL ADMINISTRATIVA")
+    mi.Separator()
+
+    mi.BeginChild("##mods_mi_sidebar", mi.ImVec2(180, 420), true)
+    for _, pagina in ipairs({ "GERAL", "PAINEIS", "FERRAMENTAS" }) do
+        local paginaSelecionada = _G.HZModsPagina == pagina
+        if paginaSelecionada then
+            mi.PushStyleColor(mi.Col.Button, mi.ImVec4(0.02, 0.48, 0.70, 1.00))
+        end
+        if mi.Button((paginaSelecionada and ">  " or "   ") .. pagina .. "##mi_" .. pagina,
+            mi.ImVec2(155, 38)) then
+            _G.HZModsPagina = pagina
+        end
+        if paginaSelecionada then mi.PopStyleColor() end
+    end
+    mi.Spacing()
+    mi.Separator()
+    local okStaffId, staffId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    local staffNome = okStaffId and tostring(sampGetPlayerNickname(staffId) or "Staff") or "Staff"
+    local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
+    mi.TextColored(mi.ImVec4(0.62, 0.70, 0.80, 1.00), "STAFF")
+    mi.Text(staffNome)
+    mi.TextColored(mi.ImVec4(0.15, 0.72, 1.00, 1.00), cargoNome)
+    mi.EndChild()
+
+    mi.SameLine()
+    mi.BeginChild("##mods_mi_conteudo", mi.ImVec2(0, 420), true)
+    mi.TextColored(mi.ImVec4(0.15, 0.72, 1.00, 1.00), "CENTRAL DE CONTROLE")
+    mi.Text(_G.HZModsPagina)
+    mi.TextColored(mi.ImVec4(0.62, 0.70, 0.80, 1.00),
+        "Clique no cartao para ativar ou desativar a funcao.")
+    mi.Separator()
+
+    local visiveis = {}
+    for _, item in ipairs(_G.HZModulosUI) do
+        local id = item[1]
+        if _G.HZModsPagina == "GERAL"
+            or (_G.HZModsPagina == "PAINEIS" and
+                (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
+            or (_G.HZModsPagina == "FERRAMENTAS" and
+                (id == "camera_staff" or id == "automacoes_staff")) then
+            visiveis[#visiveis + 1] = item
+        end
+    end
+
+    for i, item in ipairs(visiveis) do
+        local id, titulo, descricao = item[1], item[2], item[3]
+        local permitido = _G.HZTemPermissaoModulo(id)
+        local ativo = _G.HZModuloAtivo(id)
+        if ativo then
+            mi.PushStyleColor(mi.Col.Button, mi.ImVec4(0.025, 0.28, 0.40, 0.96))
+        elseif not permitido then
+            mi.PushStyleColor(mi.Col.Button, mi.ImVec4(0.07, 0.08, 0.11, 0.92))
+        end
+        local estado = permitido and (ativo and "ATIVO" or "DESATIVADO") or "BLOQUEADO"
+        local texto = titulo .. "\n" .. estado .. "\n" .. descricao .. "##mi_card_" .. id
+        if mi.Button(texto, mi.ImVec2(258, 92)) and permitido then
+            if _G.HZDefinirModulo(id, not ativo) then
+                sampAddChatMessage((not ativo and "{3EDC81}[MODS] Ativado: " or
+                    "{FF6B6B}[MODS] Desativado: ") .. titulo, -1)
+            end
+        end
+        if ativo or not permitido then mi.PopStyleColor() end
+        if i % 2 == 1 and i < #visiveis then mi.SameLine() end
+    end
+    mi.EndChild()
+
+    if mi.Button("FECHAR PAINEL", mi.ImVec2(180, 35)) then
+        _G.HZFecharPainelMods()
+    end
+    mi.SameLine()
+    mi.TextColored(mi.ImVec4(0.48, 0.58, 0.70, 1.00), "SALVAMENTO AUTOMATICO ATIVO  |  MIMGUI")
+    mi.End()
+    mi.PopStyleColor(6)
+    mi.PopStyleVar(3)
+end
+
+if _G.HZMimguiOk then
+    _G.HZMimgui.OnFrame(
+        function()
+            local versaoMoonLoader = tonumber(getMoonloaderVersion and getMoonloaderVersion() or 26) or 26
+            return _G.HZModsJanela.v and configSistema.modsModoSeguro ~= true and versaoMoonLoader > 26
+        end,
+        function() _G.HZDesenharPainelModsMimgui() end
+    )
 end
 
 local function uiTextColor(color, txt)
@@ -4102,6 +4233,10 @@ local function setor_main()
         else
             _G.HZModsJanela.v = true
             imgui.Process = true
+        end
+        if _G.HZModsJanela.v and not _G.HZMimguiOk and configSistema.modsModoSeguro ~= true then
+            sampAddChatMessage("{FFC857}[MODS] mimgui nao encontrado. Painel compativel ativado.", -1)
+            sampAddChatMessage("{A8B5C8}[MODS] Instale o mimgui para usar o novo design.", -1)
         end
         sampAddChatMessage(_G.HZModsJanela.v and "{48C6FF}[MODS] Central de modulos aberta." or "{A8B5C8}[MODS] Central de modulos fechada.", -1)
     end)
@@ -5448,7 +5583,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.38",
+    versao = "1.39",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
