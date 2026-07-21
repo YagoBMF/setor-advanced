@@ -519,7 +519,10 @@ local function paineltv_main()
 
     while true do
         wait(0)
-        _G.HZProcessarFilaTextdraw()
+        local okFilaTextdraw, erroFilaTextdraw = pcall(_G.HZProcessarFilaTextdraw)
+        if not okFilaTextdraw then
+            print("[SETOR] Falha segura na fila TextDraw: " .. tostring(erroFilaTextdraw))
+        end
 
         -- Hotkeys (opcionais)
         if hotkeyPermitido() then
@@ -5515,7 +5518,10 @@ function _G.HZProcessarFilaTextdraw()
     local item = _G.HZFilaTextdraw[1]
     if not item or (os.clock and os.clock() or 0) < (item.processarEm or 0) then return end
     table.remove(_G.HZFilaTextdraw, 1)
-    paineltv_parse_info(item.texto)
+    if _G.HZModuloAtivo("painel_tv") and _G.PainelTVModule
+        and _G.PainelTVModule.onTextDrawSetString then
+        _G.PainelTVModule.onTextDrawSetString(0, item.texto)
+    end
     local rg, pid = try_parse_rg_and_id_from_text(item.texto)
     local nick = try_parse_nick_from_text(item.texto)
     if rg or pid or nick then maybe_store_and_announce(rg, pid, nick) end
@@ -5783,7 +5789,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.49",
+    versao = "1.50",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
