@@ -4291,9 +4291,8 @@ local function setor_main()
             if item and os.clock() >= (item.processarEm or 0) then
                 table.remove(filaCapturaNomeRG, 1)
 
-                local okCaptura, erroCaptura = pcall(_G.HZCapturarParesNomeRGDoChat, item.texto)
-                if not okCaptura then
-                    print('[SETOR_SEG] Falha segura na captura Nome/RG: ' .. tostring(erroCaptura))
+                if type(_G.HZCapturarParesNomeRGDoChat) == "function" then
+                    _G.HZCapturarParesNomeRGDoChat(item.texto)
                 end
             end
         end
@@ -5437,7 +5436,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.35",
+    versao = "1.36",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
