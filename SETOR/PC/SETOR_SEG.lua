@@ -414,6 +414,7 @@ end
 -- Tabela de referência para o Modo 2 (Auto-preencher tempo ao digitar)
 local tabelaTempos = {
     ["NRA"] = 100, ["ASM"] = 100, ["NS"] = 200, ["DM"] = 200,
+    ["MATAR SEM MOTIVO"] = 200, ["FERIR SEM MOTIVO"] = 200,
     ["ASSALTO LOJA IRREGULAR"] = 150, ["ASSALTO BANCO IRREGULAR"] = 150,
     ["ANTI RP"] = 200, ["PTR SOLO"] = 250, ["VDM"] = 250,
     ["DB"] = 250, ["AB DESMANCHE"] = 250, ["KOS"] = 250,
@@ -433,6 +434,7 @@ local motivosCadeia = {
     {"ASM - Agressao sem motivo", 100, "Agressao sem motivo"},
     {"NS - Sem amor a vida", 200, "Sem amor a vida"},
     {"DM - Matar sem motivo", 200, "Matar sem motivo"},
+    {"DM - Ferir sem motivo", 200, "Ferir sem motivo"},
     {"Assalto loja irregular", 150}, {"Assalto banco irregular", 150},
     {"Anti-RP - Roubo de caixinha sobre veiculo", 200, "Roubo de caixinha sobre veiculo"},
     {"Anti-RP - Uso indevido de profissao", 200, "Uso indevido de profissao"},
@@ -5821,7 +5823,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.58",
+    versao = "1.59",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
