@@ -648,8 +648,8 @@ local function paineltv_OnDrawFrame()
 
     local function fitWindowHeight()
         if menuAtual == "principal" then
-            if _G.HZMonitorEtapa1 and _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then return 472 end
-            return 397
+            if _G.HZMonitorEtapa1 and _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then return 505 end
+            return 430
         end
         if menuAtual == "config" then return 385 end
         if menuAtual == "categorias" then return 295 end
@@ -5811,7 +5811,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.55",
+    versao = "1.56",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
