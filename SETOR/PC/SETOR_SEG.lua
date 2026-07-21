@@ -910,7 +910,7 @@ local function paineltv_OnDrawFrame()
         imgui.EndChild()
 
         -- Relogio discreto no rodape do Painel TV
-        local relogioTxt = "DATA E HORARIO  |  " .. (dataServidor ~= "" and dataServidor or "--/--/--")
+        local relogioTxt = (dataServidor ~= "" and dataServidor or "--/--/--")
             .. "  |  " .. (relogioServidor ~= "" and relogioServidor or "--:--:--")
 
         imgui.Spacing()
@@ -5299,14 +5299,23 @@ local function setor_onServerMessage(color, text)
                     _G.HZMonitorEtapa1.ativarEListar()
                 end
 
-                -- Diretor/Coordenador usam mensagens diferentes e podem chegar
-                -- com acentos convertidos. Identifica o cargo pelas palavras
-                -- estaveis da mensagem e libera o /mods pelo nick local.
+                -- Identificacao generica para todos os cargos. A mensagem precisa
+                -- ser do jogador local ou ser resposta direta ao /la pendente.
+                -- O /mods abre para a staff, mas cada modulo continua respeitando
+                -- a permissao minima definida em HZPermissaoMinimaModulo.
                 local cargoConfirmado = nil
                 if mensagemLower:find("diretor", 1, true) then
                     cargoConfirmado = "Diretor"
                 elseif mensagemLower:find("coorden", 1, true) then
                     cargoConfirmado = "Coordenador"
+                elseif mensagemLower:find("moder", 1, true) then
+                    cargoConfirmado = "Moderador"
+                elseif mensagemLower:find("ajud", 1, true) then
+                    cargoConfirmado = "Ajudante"
+                -- Nao procurar apenas "admin": todas as confirmacoes contem
+                -- "administracao" ou o prefixo ADMIN, o que elevaria outros cargos.
+                elseif mensagemLower:find("administrador", 1, true) then
+                    cargoConfirmado = "Administrador"
                 end
 
                 if cargoConfirmado then
@@ -5319,7 +5328,8 @@ local function setor_onServerMessage(color, text)
                         startStaffSaciarme()
                         startStaffSupport(cargoAdmin)
                     end
-                    _G.HZAvisarCargoUmaVez(cargoConfirmado, nomeAdmin, "Acesso ao /mods liberado.")
+                    local _, cargoNomeConfirmado = _G.HZNivelCargo(cargoConfirmado)
+                    _G.HZAvisarCargoUmaVez(cargoNomeConfirmado, nomeAdmin, "Acesso ao /mods liberado conforme o cargo.")
                 end
 
             elseif confirmouLogout then
@@ -5811,7 +5821,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.56",
+    versao = "1.58",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
