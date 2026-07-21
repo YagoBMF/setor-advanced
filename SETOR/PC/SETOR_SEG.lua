@@ -133,7 +133,8 @@ function _G.HZAvisosAC.marcarReport()
     _G.HZAvisosAC.aguardandoReport = false
     _G.HZAvisosAC.prazoReport = 0
     _G.HZAvisosAC.solicitouLista = true
-    _G.HZAvisosAC.prazoLista = (os.clock and os.clock() or 0) + 8
+    -- A lista pode ficar aberta enquanto a staff analisa os reports.
+    _G.HZAvisosAC.prazoLista = (os.clock and os.clock() or 0) + 60
     _G.HZAvisosAC.dialogReportId = -1
 end
 
@@ -152,10 +153,9 @@ function _G.HZAvisosAC.registrarDialogo(id, titulo, texto)
         _G.HZAvisosAC.cancelarReport()
         return
     end
-    local conteudo = (tostring(titulo or "") .. " " .. tostring(texto or "")):lower()
-    if conteudo:find("report", 1, true) then
-        _G.HZAvisosAC.dialogReportId = tonumber(id) or -1
-    end
+    -- O Horizonte nem sempre inclui a palavra "report" no titulo/conteudo.
+    -- Como /reports acabou de ser enviado, o primeiro dialogo recebido e a lista.
+    _G.HZAvisosAC.dialogReportId = tonumber(id) or -1
 end
 
 function _G.HZAvisosAC.responderDialogo(id, botao)
@@ -167,7 +167,7 @@ function _G.HZAvisosAC.responderDialogo(id, botao)
     if selecionou then
         _G.HZAvisosAC.aguardandoReport = true
         -- Tempo apenas para o servidor iniciar a telagem selecionada.
-        _G.HZAvisosAC.prazoReport = (os.clock and os.clock() or 0) + 8
+        _G.HZAvisosAC.prazoReport = (os.clock and os.clock() or 0) + 15
     else
         _G.HZAvisosAC.cancelarReport()
     end
@@ -224,7 +224,8 @@ local function paineltv_tentar_capturar_relogio(text)
         local lower = clean:lower()
         local temMes = lower:match("jan") or lower:match("fev") or lower:match("mar") or lower:match("abr") or lower:match("mai") or lower:match("jun") or lower:match("jul") or lower:match("ago") or lower:match("set") or lower:match("out") or lower:match("nov") or lower:match("dez")
         if temMes then
-            relogioServidor = clean
+            -- Usa somente a hora real do servidor. Nao substitui pelo relogio do PC.
+            relogioServidor = clean:match("(%d%d?:%d%d:%d%d)") or ""
             ultimoRelogioServidor = os.clock and os.clock() or 0
         end
     end
@@ -624,6 +625,14 @@ local function paineltv_OnDrawFrame()
         return ok
     end
 
+    -- O chat do SA-MP pode permanecer aberto apenas para fornecer o cursor.
+    -- Ao clicar em um campo, devolve o foco ao ImGui sem fechar/desativar o chat.
+    local function manterFocoCampoPainel()
+        if imgui.IsItemClicked and imgui.IsItemClicked() and imgui.SetKeyboardFocusHere then
+            imgui.SetKeyboardFocusHere(-1)
+        end
+    end
+
     local function sectionTitle(txt)
         imgui.Spacing()
         imgui.Separator()
@@ -855,6 +864,7 @@ local function paineltv_OnDrawFrame()
             if _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then
                 imgui.PushItemWidth(-1)
                 imgui.InputText(u8"##motivo_monitoramento", _G.HZMonitorEtapa1.motivoBuffer)
+                manterFocoCampoPainel()
                 imgui.PopItemWidth()
                 imgui.TextColored(C_MUTED, u8"Informe o motivo do monitoramento")
 
@@ -876,6 +886,7 @@ local function paineltv_OnDrawFrame()
         imgui.SameLine()
         imgui.PushItemWidth(54)
         imgui.InputInt("##val", valorStatus, 0, 0)
+        manterFocoCampoPainel()
         imgui.PopItemWidth()
         imgui.SameLine(0, 2)
         if hzButton(u8"+", imgui.ImVec2(36, 30), C_BLUE, C_BLUE_H, C_BLUE) then
@@ -892,10 +903,8 @@ local function paineltv_OnDrawFrame()
         imgui.EndChild()
 
         -- Relogio discreto no rodape do Painel TV
-        local relogioTxt = relogioServidor
-        if relogioTxt == "" then
-            relogioTxt = os.date("%d/%m/%Y, %H:%M:%S")
-        end
+        local relogioTxt = relogioServidor ~= "" and ("HORARIO DO SERVIDOR  |  " .. relogioServidor)
+            or "HORARIO DO SERVIDOR  |  --:--:--"
 
         imgui.Spacing()
         imgui.Separator()
@@ -941,6 +950,7 @@ local function paineltv_OnDrawFrame()
         if modoPainel == 1 then
             imgui.PushItemWidth(-1)
             imgui.InputText(u8"Pesquisar", pesquisa)
+            manterFocoCampoPainel()
             imgui.PopItemWidth()
             local lista = (menuAtual == "lista_cadeia" and motivosCadeia) or (menuAtual == "lista_mute" and motivosMute) or (menuAtual == "lista_ban" and motivosBan) or motivosKick
             imgui.BeginChild("sc", imgui.ImVec2(0, H_CHILD_LIST), true)
@@ -962,7 +972,9 @@ local function paineltv_OnDrawFrame()
         else
             imgui.TextColored(C_MUTED, u8("Motivo Manual (" .. labelPunicao .. ")"))
             imgui.PushItemWidth(-1)
-            if imgui.InputText("##mman", bufMotivoManual) then
+            local motivoManualAlterado = imgui.InputText("##mman", bufMotivoManual)
+            manterFocoCampoPainel()
+            if motivoManualAlterado then
                 local motUpper = bufMotivoManual.v:upper()
                 local listaAtual = (comandoBase == "/punicao" and motivosCadeia)
                     or (comandoBase == "/mute" and motivosMute)
@@ -992,6 +1004,7 @@ local function paineltv_OnDrawFrame()
                 imgui.TextColored(C_MUTED, comandoBase == "/punicao" and u8"Tempo (Minutos)" or u8"Tempo (Dias)")
                 imgui.PushItemWidth(-1)
                 imgui.InputInt("##tman", tempoPunicao)
+                manterFocoCampoPainel()
                 imgui.PopItemWidth()
             end
             if hzButton(u8"PROSSEGUIR", imgui.ImVec2(-1, H_BTN_MAIN), C_PRIMARY, C_HOVER, C_ACTIVE) then
@@ -1030,6 +1043,7 @@ local function paineltv_OnDrawFrame()
         if comandoBase ~= "/kick" then
             local txt = (comandoBase == "/ban" or comandoBase == "/mute") and u8"DIAS" or u8"TEMPO"
             imgui.InputInt(txt, tempoPunicao)
+            manterFocoCampoPainel()
         end
         imgui.EndChild()
 
@@ -5790,7 +5804,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.51",
+    versao = "1.54",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
