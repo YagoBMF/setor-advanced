@@ -3526,8 +3526,8 @@ function _G.HZDesenharPainelMods()
         if imgui.WindowFlags.NoScrollbar then flags = flags + imgui.WindowFlags.NoScrollbar end
     end
 
-    -- Mantem uma unica janela ImGui para compatibilidade entre PCs.
-    -- Algumas versoes antigas fecham o GTA ao criar janelas auxiliares de sombra.
+    -- Uma unica janela mantem o design avancado estavel em diferentes PCs/GPU.
+    -- Sombras externas com janelas auxiliares causam crash nativo em algumas instalacoes.
     imgui.SetNextWindowSize(imgui.ImVec2(800, 565), imgui.Cond.Always)
     if not _G.HZModsPosCarregada then
         imgui.SetNextWindowPos(imgui.ImVec2(
@@ -4291,7 +4291,7 @@ local function setor_main()
             if item and os.clock() >= (item.processarEm or 0) then
                 table.remove(filaCapturaNomeRG, 1)
 
-                local okCaptura, erroCaptura = pcall(capturarParesNomeRGDoChat, item.texto)
+                local okCaptura, erroCaptura = pcall(_G.HZCapturarParesNomeRGDoChat, item.texto)
                 if not okCaptura then
                     print('[SETOR_SEG] Falha segura na captura Nome/RG: ' .. tostring(erroCaptura))
                 end
@@ -4849,7 +4849,7 @@ function enfileirarCapturaNomeRG(cleanText)
     end
 end
 
-local function capturarParesNomeRGDoChat(cleanText)
+function _G.HZCapturarParesNomeRGDoChat(cleanText)
     if type(cleanText) ~= "string" then return end
 
     local ignorar = {
@@ -5437,7 +5437,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.32",
+    versao = "1.34",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
