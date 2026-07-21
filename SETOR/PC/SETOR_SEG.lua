@@ -398,17 +398,76 @@ end
 
 -- Tabela de referência para o Modo 2 (Auto-preencher tempo ao digitar)
 local tabelaTempos = {
-    ["ANTI RP"] = 250, ["DM"] = 250, ["VDM"] = 250, ["RDM"] = 250, ["NRA"] = 80,
-    ["JBL HP"] = 50, ["DB"] = 250, ["MG"] = 250, ["PG"] = 250, ["KOS"] = 250
+    ["NRA"] = 100, ["ASM"] = 100, ["NS"] = 200, ["DM"] = 200,
+    ["ASSALTO LOJA IRREGULAR"] = 150, ["ASSALTO BANCO IRREGULAR"] = 150,
+    ["ANTI RP"] = 200, ["PTR SOLO"] = 250, ["VDM"] = 250,
+    ["DB"] = 250, ["AB DESMANCHE"] = 250, ["KOS"] = 250,
+    ["PG"] = 250, ["TK"] = 250, ["HK"] = 250, ["SLP"] = 250,
+    ["INVASAO SEM AUTORIZACAO"] = 250, ["RDM"] = 250, ["RK"] = 250,
+    ["SPAM KILL"] = 250, ["CORRENDO SAFE"] = 250, ["COMBAT LOG"] = 250,
+    ["CORRUPCAO"] = 300, ["DARK RP"] = 300
 }
 
 -- ======================
 -- LISTAS DE MOTIVOS
 -- ======================
-local motivosCadeia = { {"NRA", 80}, {"JBL HP", 50}, {"JBL Spawn", 50}, {"ASM", 80}, {"Loja Solo", 150}, {"Loja em dois", 150}, {"Assalto Banco < 5", 150}, {"DB", 250}, {"DM", 250}, {"Acao Safe", 250}, {"Acao Desmanche", 250}, {"AB Desmanche", 250}, {"KOS", 250}, {"MG", 250}, {"PG", 250}, {"TK", 250}, {"VDM", 250}, {"HK", 250}, {"PTR Solo", 250}, {"Sniper Rua", 250}, {"Anti-RP", 250}, {"Invasao s/ marcar", 250}, {"NS", 250}, {"RDM", 250}, {"RK", 250}, {"Correu interior", 250}, {"Corrupcao", 300}, {"Dark RP", 300} }
-local motivosMute   = { {"Cobrancas ADM", 10}, {"Farpa media", 5}, {"Bullying", 5}, {"Flood chat", 3}, {"Baixo calao", 5}, {"Preconceito", 15}, {"Conteudo sexual", 15}, {"MUC /AN", 1}, {"MUC /ANORG", 1}, {"MUC Atendimento", 2} }
-local motivosBan    = { {"CL", 5}, {"Handling", 5}, {"Animacao Vantajosa", 5}, {"Anti-RP extremo", 15}, {"Cortando animacao", 15}, {"Cheat", 0}, {"Ofensa Staff", 0}, {"Ofensa Servidor", 0}, {"Comercio Ilegal", 0}, {"Nick Improprio", 0} }
-local motivosKick   = { {"Remover acc", 0}, {"JBL SAFE 1/2", 0}, {"JBL HP 1/2", 0}, {"RT", 0}, {"Relogar", 0} }
+local motivosCadeia = {
+    {"NRA - Uso de arma em safe", 100}, {"ASM - Agressao sem motivo", 100},
+    {"NS - Sem amor a vida", 200}, {"DM - Matar sem motivo", 200},
+    {"Assalto loja irregular", 150}, {"Assalto banco irregular", 150},
+    {"Anti-RP - Roubo de caixinha sobre veiculo", 200},
+    {"Anti-RP - Uso indevido de profissao", 200},
+    {"PTR solo - Policial solo em acao", 250}, {"VDM - Veiculo usado como arma", 250},
+    {"DB - Atirando de dentro do veiculo", 250}, {"AB Desmanche", 250},
+    {"KOS - Matar por identificacao", 250}, {"PG - Acao fora da realidade", 250},
+    {"TK - Matar aliado sem motivo", 250}, {"HK - Matar com helicoptero", 250},
+    {"SLP - Sniper em local proibido", 250}, {"Invasao sem autorizacao", 250},
+    {"RDM - Multiplas mortes", 250}, {"RK - Vinganca apos morte", 250},
+    {"Spam Kill - Abusando de interior", 250}, {"Correndo safe em AB/Acao", 250},
+    {"Combat Log - Desconectou em acao", 250}, {"Corrupcao", 300}, {"Dark RP", 300}
+}
+local motivosMute = {
+    {"MUCS - Restricao", 3}, {"MUC Atendimento", 3}, {"MUC Duvida", 3},
+    {"MUC Missa", 3}, {"MUC News", 3}, {"MUC OLX", 3},
+    {"MUC /Reportar", 3}, {"MUC Anorg", 3}, {"MUC An", 3},
+    {"Ofensa Staff/Servidor", 30}, {"Desrespeito", 3}, {"Conteudo sexual", 3}
+}
+local motivosBan = {
+    {"Cortar animacao", 15}, {"Handling", 5}, {"Animacao vantajosa", 5},
+    {"Anti-RP extremo (10 dias)", 10}, {"Anti-RP extremo (15 dias)", 15},
+    {"Anti-RP extremo (20 dias)", 20}, {"Cheat / Mod proibido", 0}, {"Abuso de bug", 0},
+    {"Comercio ilegal", 0}, {"Divulgacao", 0}, {"Nick improprio", 0},
+    {"Money farm", 0}, {"Racismo", 0}, {"Gordofobia", 0}
+}
+local motivosKick = { {"RT / Bugado (solicitado)", 0}, {"Bugando evento", 0} }
+
+local function normalizarMotivoPainel(valor)
+    return tostring(valor or ""):upper():gsub("[^%w%s]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
+end
+
+local function tempoCadeiaPorLevel(motivo, tempoNormal)
+    local level = tonumber(levelTelado)
+    if level and level >= 0 and level <= 30 then
+        if normalizarMotivoPainel(motivo):find("DARK RP", 1, true) then return 150, true end
+        return 50, true
+    end
+    return tonumber(tempoNormal) or 0, false
+end
+
+local function localizarMotivoDigitado(texto, lista)
+    local busca = normalizarMotivoPainel(texto)
+    if busca == "" then return nil end
+    local encontrado = nil
+    for _, item in ipairs(lista or {}) do
+        local nomeNormal = normalizarMotivoPainel(item[1])
+        if nomeNormal == busca then return item end
+        if nomeNormal:find(busca, 1, true) then
+            if encontrado then return nil end -- Mais de uma opcao: aguarda mais letras.
+            encontrado = item
+        end
+    end
+    return encontrado
+end
 
 -- ======================
 -- COMANDOS
@@ -555,7 +614,7 @@ local function paineltv_OnDrawFrame()
         end
         if menuAtual == "config" then return 385 end
         if menuAtual == "categorias" then return 295 end
-        if menuAtual == "confirmar" then return 335 end
+        if menuAtual == "confirmar" then return 355 end
         if tostring(menuAtual):find("lista_") then return 330 end
         return alturaJanela
     end
@@ -841,6 +900,9 @@ local function paineltv_OnDrawFrame()
                 menuAtual = c[2]
                 comandoBase = c[3]
                 labelPunicao = c[4]
+                motivoSel = ""
+                bufMotivoManual.v = ""
+                tempoPunicao.v = 0
                 aguardandoConfirmBanPerm = false
             end
         end
@@ -863,7 +925,11 @@ local function paineltv_OnDrawFrame()
                 if v[1]:lower():find(pesquisa.v:lower()) then
                     if hzButton(u8(v[1] .. "  |  " .. tostring(v[2])), imgui.ImVec2(-1, 27), C_CARD, C_HOVER, C_ACTIVE) then
                         motivoSel = v[1]
-                        tempoPunicao.v = v[2]
+                        if comandoBase == "/punicao" then
+                            tempoPunicao.v = tempoCadeiaPorLevel(v[1], v[2])
+                        else
+                            tempoPunicao.v = v[2]
+                        end
                         menuAtual = "confirmar"
                         aguardandoConfirmBanPerm = false
                     end
@@ -875,9 +941,30 @@ local function paineltv_OnDrawFrame()
             imgui.PushItemWidth(-1)
             if imgui.InputText("##mman", bufMotivoManual) then
                 local motUpper = bufMotivoManual.v:upper()
-                if tabelaTempos[motUpper] then tempoPunicao.v = tabelaTempos[motUpper] end
+                local listaAtual = (comandoBase == "/punicao" and motivosCadeia)
+                    or (comandoBase == "/mute" and motivosMute)
+                    or (comandoBase == "/ban" and motivosBan) or motivosKick
+                local sugestao = localizarMotivoDigitado(bufMotivoManual.v, listaAtual)
+                local tempoEncontrado = tabelaTempos[motUpper]
+                if sugestao then
+                    motivoSel = sugestao[1]
+                    tempoEncontrado = sugestao[2]
+                else
+                    motivoSel = bufMotivoManual.v
+                end
+                if tempoEncontrado ~= nil then
+                    if comandoBase == "/punicao" then
+                        tempoPunicao.v = tempoCadeiaPorLevel(motivoSel ~= "" and motivoSel or bufMotivoManual.v, tempoEncontrado)
+                    else
+                        tempoPunicao.v = tempoEncontrado
+                    end
+                end
             end
             imgui.PopItemWidth()
+            if hzButton(u8"ESCOLHER NA TABELA", imgui.ImVec2(-1, 28), C_CARD, C_HOVER, C_ACTIVE) then
+                modoPainel = 1
+                salvarPreferenciasPainelTv()
+            end
             if comandoBase ~= "/kick" then
                 imgui.TextColored(C_MUTED, comandoBase == "/punicao" and u8"Tempo (Minutos)" or u8"Tempo (Dias)")
                 imgui.PushItemWidth(-1)
@@ -885,7 +972,7 @@ local function paineltv_OnDrawFrame()
                 imgui.PopItemWidth()
             end
             if hzButton(u8"PROSSEGUIR", imgui.ImVec2(-1, H_BTN_MAIN), C_PRIMARY, C_HOVER, C_ACTIVE) then
-                motivoSel = bufMotivoManual.v
+                if motivoSel == "" then motivoSel = bufMotivoManual.v end
                 menuAtual = "confirmar"
                 aguardandoConfirmBanPerm = false
             end
@@ -905,7 +992,7 @@ local function paineltv_OnDrawFrame()
         imgui.TextColored(C_LINE, u8("CONFIRMAR " .. statusLabel))
         imgui.TextColored(C_MUTED, u8"Confira antes de aplicar")
         imgui.Separator()
-        imgui.BeginChild("##hz_confirm", imgui.ImVec2(0, 116), true)
+        imgui.BeginChild("##hz_confirm", imgui.ImVec2(0, 136), true)
         if comandoBase == "/mute" then
             imgui.TextColored(C_MUTED, u8("RG: " .. rgTelado .. "   |   ID: " .. idTelado))
         else
@@ -913,6 +1000,10 @@ local function paineltv_OnDrawFrame()
             imgui.TextColored(C_MUTED, u8("RG: " .. rgTelado .. "   |   ID: " .. idTelado))
         end
         imgui.TextColored(C_TEXT, u8("MOTIVO: " .. motivoSel))
+        local levelConfirmacao = tonumber(levelTelado)
+        if comandoBase == "/punicao" and levelConfirmacao and levelConfirmacao >= 0 and levelConfirmacao <= 30 then
+            imgui.TextColored(C_WARN, u8("REGRA NOVATO LEVEL 0-30 APLICADA"))
+        end
         if comandoBase ~= "/kick" then
             local txt = (comandoBase == "/ban" or comandoBase == "/mute") and u8"DIAS" or u8"TEMPO"
             imgui.InputInt(txt, tempoPunicao)
@@ -1128,6 +1219,23 @@ local idJogadorAtendido = ""
 local cargoAdmin = "Desconhecido"
 local nomeAdmin = ""
 _G.HZStaffLogada = false
+
+-- Retorna sempre o nick do jogador desta instalacao. Os logs nao podem herdar
+-- o nome de quem desenvolveu, atualizou ou utilizou anteriormente o arquivo.
+function _G.HZNomeStaffAtual()
+    if type(sampGetPlayerIdByCharHandle) == "function"
+        and type(sampGetPlayerNickname) == "function" then
+        local okId, playerId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+        if okId then
+            local nickAtual = tostring(sampGetPlayerNickname(playerId) or "")
+            if nickAtual ~= "" then
+                nomeAdmin = nickAtual
+            end
+        end
+    end
+    if tostring(nomeAdmin or "") == "" then return "Desconhecido" end
+    return tostring(nomeAdmin)
+end
 local historicoConversa = {}
 local tempoInicio = 0
 local tempoFinalCongelado = ""
@@ -2021,6 +2129,7 @@ function _G.HZMonitorEtapa1.obterNick(rg, nomeDigitado)
 end
 
 function _G.HZMonitorEtapa1.monitor(arg)
+    _G.HZNomeStaffAtual()
     arg = tostring(arg or ""):match("^%s*(.-)%s*$")
     local alvo, motivo = arg:match("^(%S+)%s+(.+)$")
 
@@ -4623,11 +4732,12 @@ end
 -- Envio essencial de punições para Discord
 -- Mantido apenas para BAN, BANTEMP, CADEIA/PUNIÇÃO e MUTE.
 function enviarTudo(nick, id_ou_rg, tempo, motivo, acao, url, tipoPunicao)
+    local staffLog = _G.HZNomeStaffAtual()
     lua_thread.create(function()
         local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
 
         local formMsg = string.format("```\\nADM: %s\\nNICK: %s\\nRG: %s\\nTEMPO: %s\\nMOTIVO: %s\\nPROVAS: \\n```",
-            nomeAdmin, nick, id_ou_rg, tempo, motivo)
+            staffLog, nick, id_ou_rg, tempo, motivo)
 
         requests.post(url, {data = '{"content":"['..dataHora..']"}', headers = {["Content-Type"] = "application/json"}})
         wait(700)
@@ -4669,6 +4779,8 @@ end
 -- MONITORAMENTO DE COMANDOS (SETOR SEGURANÇA)
 -- ============================================================
 local function setor_onSendCommand(cmd)
+    -- Atualiza a identidade antes de qualquer comando gerar um log.
+    _G.HZNomeStaffAtual()
     local dH = os.date("%d/%m/%Y - %H:%M:%S")
 
     do
@@ -5463,6 +5575,7 @@ function enviarLogTapa(jNome, jId)
 end
 
 function finalizarTudo(statusTexto)
+    _G.HZNomeStaffAtual()
     if not emAtendimento then return end
     local duracao = os.difftime(os.time(), tempoInicio)
     local m, s = math.floor(duracao / 60), duracao % 60
@@ -5606,7 +5719,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.41",
+    versao = "1.43",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
