@@ -4356,19 +4356,20 @@ end
 local function setor_main()
     while not isSampAvailable() do wait(100) end
 
-    sampRegisterChatCommand("setorversao", function()
-        sampAddChatMessage("{48C6FF}[SETOR UPDATE]: Versao PC instalada: " .. _G.HZUpdaterPC.versao, -1)
-        _G.HZUpdaterPC.verificar(false)
-    end)
-
-    sampRegisterChatCommand("setoratualizar", function()
-        _G.HZUpdaterPC.instalar()
-    end)
-
-    lua_thread.create(function()
-        wait(5000)
-        _G.HZUpdaterPC.verificar(true)
-    end)
+    local updaterIndependente = getWorkingDirectory() .. "\\SETOR_UPDATER.lua"
+    if not doesFileExist(updaterIndependente) then
+        sampRegisterChatCommand("setorversao", function()
+            sampAddChatMessage("{48C6FF}[SETOR UPDATE]: Versao PC instalada: " .. _G.HZUpdaterPC.versao, -1)
+            _G.HZUpdaterPC.verificar(false)
+        end)
+        sampRegisterChatCommand("setoratualizar", function() _G.HZUpdaterPC.instalar() end)
+        lua_thread.create(function()
+            wait(3000)
+            _G.HZUpdaterPC.garantirBootstrap()
+            wait(2000)
+            _G.HZUpdaterPC.verificar(true)
+        end)
+    end
     
     -- Inicialização do Sistema Integrado
     fonteTitulo = renderCreateFont("Arial", 10, 5) 
@@ -5789,9 +5790,10 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.50",
+    versao = "1.51",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
+    urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
     consultando = false
 }
 
@@ -5813,10 +5815,33 @@ function _G.HZUpdaterPC.remotaMaior(remota, instalada)
 end
 
 function _G.HZUpdaterPC.obterVersao()
-    local ok, res = pcall(requests.get, _G.HZUpdaterPC.urlVersao)
+    local url = _G.HZUpdaterPC.urlVersao .. "?setor_cache=" .. tostring(os.time())
+    local ok, res = pcall(requests.get, url)
     if not ok then return nil end
     local corpo = _G.HZUpdaterPC.corpoResposta(res)
     return corpo and tostring(corpo):match("([%d%.]+)") or nil
+end
+
+function _G.HZUpdaterPC.garantirBootstrap()
+    local path = getWorkingDirectory() .. "\\SETOR_UPDATER.lua"
+    if doesFileExist(path) then return true end
+    local url = _G.HZUpdaterPC.urlBootstrap .. "?setor_cache=" .. tostring(os.time())
+    local ok, res = pcall(requests.get, url)
+    local codigo = ok and _G.HZUpdaterPC.corpoResposta(res) or nil
+    if type(codigo) ~= "string" or #codigo < 4000
+        or not codigo:find('script_name("SETOR Updater")', 1, true) then
+        sampAddChatMessage("{FFFF00}[SETOR UPDATE]: Instale SETOR_UPDATER.lua para habilitar recuperacao automatica.", -1)
+        return false
+    end
+    local compilado = loadstring(codigo, "@SETOR_UPDATER.download")
+    if not compilado then return false end
+    local f = io.open(path, "wb")
+    if not f then return false end
+    f:write(codigo)
+    f:flush()
+    f:close()
+    sampAddChatMessage("{00FF7F}[SETOR UPDATE]: Recuperador instalado. Ele sera ativado no proximo reinicio.", -1)
+    return true
 end
 
 function _G.HZUpdaterPC.caminhoAtual()
@@ -5876,9 +5901,12 @@ function _G.HZUpdaterPC.instalar(silencioso)
 
         local ok, res = pcall(requests.get, _G.HZUpdaterPC.urlScript)
         local novo = ok and _G.HZUpdaterPC.corpoResposta(res) or nil
-        if not novo or #novo < 50000 or not tostring(novo):find("SETOR") then
+        local versaoNoCodigo = novo and tostring(novo):match('versao%s*=%s*"([%d%.]+)"') or nil
+        local compilado = novo and loadstring(novo, "@SETOR_SEG.download") or nil
+        if not novo or #novo < 50000 or not tostring(novo):find("SETOR")
+            or versaoNoCodigo ~= remota or not compilado then
             _G.HZUpdaterPC.consultando = false
-            return sampAddChatMessage("{FF5555}[SETOR UPDATE]: Arquivo remoto invalido. Operacao cancelada.", -1)
+            return sampAddChatMessage("{FF5555}[SETOR UPDATE]: Arquivo remoto inconsistente ou com erro. Atualizacao cancelada.", -1)
         end
 
         local path = _G.HZUpdaterPC.caminhoAtual()
