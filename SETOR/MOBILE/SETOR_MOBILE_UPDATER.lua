@@ -57,7 +57,7 @@ local function gravar(path, conteudo)
     return ler(path) == conteudo
 end
 
-local function instalar(forcar)
+local function instalar(forcar, silencioso)
     if atualizando then return chat('{FFFF00}', 'Atualizacao ja esta em andamento.') end
     atualizando = true
     lua_thread.create(function()
@@ -65,9 +65,15 @@ local function instalar(forcar)
         remoto = remoto and remoto:match('([%d%.]+)')
         local path, atual = scriptPath(), ler(scriptPath())
         local localVersion = versaoDoScript(atual)
-        if not remoto then atualizando = false return chat('{FF5555}', 'Nao foi possivel consultar a versao.') end
+        if not remoto then
+            atualizando = false
+            if not silencioso then chat('{FF5555}', 'Nao foi possivel consultar a versao.') end
+            return
+        end
         if not forcar and localVersion and not maior(remoto, localVersion) then
-            atualizando = false return chat('{3EDC81}', 'Versao ' .. localVersion .. ' ja esta atualizada.')
+            atualizando = false
+            if not silencioso then chat('{3EDC81}', 'Versao ' .. localVersion .. ' ja esta atualizada.') end
+            return
         end
         local novo = get(SCRIPT_URL)
         if not novo or #novo < 10000 or versaoDoScript(novo) ~= remoto or not novo:find('SETOR SEGURANCA %- MOBILE') then
@@ -99,7 +105,9 @@ function main()
         if backup and gravar(path, backup) then chat('{3EDC81}', 'Backup restaurado. Reinicie o jogo.')
         else chat('{FF5555}', 'Backup valido nao encontrado.') end
     end)
+    -- Verifica automaticamente ao iniciar. Se ja estiver atualizado, nao
+    -- mostra mensagem; /setoratualizar continua disponivel para forcar.
     wait(5000)
-    instalar(false)
+    instalar(false, true)
     wait(-1)
 end
