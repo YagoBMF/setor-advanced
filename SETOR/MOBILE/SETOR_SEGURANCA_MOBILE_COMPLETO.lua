@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.24'
+local VERSION = '3.27'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -42,7 +42,8 @@ local cfg = inicfg.load({
     dados = { nome = 'Vazio', cargo = 'Vazio' },
     interface = {
         painel_tv_x = 18, painel_tv_y = 250, painel_tv_visivel = true,
-        atendimento_x = 18, atendimento_y = 170
+        atendimento_x = 18, atendimento_y = 170,
+        suporte_x = 18, suporte_y = 280
     },
     modulos = {
         painel_tv = true, navegacao_tv = true,
@@ -58,6 +59,8 @@ if cfg.interface.painel_tv_y == nil then cfg.interface.painel_tv_y = 250 end
 if cfg.interface.painel_tv_visivel == nil then cfg.interface.painel_tv_visivel = true end
 if cfg.interface.atendimento_x == nil then cfg.interface.atendimento_x = 18 end
 if cfg.interface.atendimento_y == nil then cfg.interface.atendimento_y = 170 end
+if cfg.interface.suporte_x == nil then cfg.interface.suporte_x = 18 end
+if cfg.interface.suporte_y == nil then cfg.interface.suporte_y = 280 end
 if cfg.modulos.navegacao_tv == nil then cfg.modulos.navegacao_tv = cfg.modulos.navegacao ~= false end
 if cfg.modulos.acoes_staff == nil then cfg.modulos.acoes_staff = cfg.modulos.atalhos ~= false end
 if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
@@ -74,6 +77,7 @@ local navNovato, navTodos = 0, 0
 local staffLogada = false
 local loginStaffPendenteAte = 0
 local reportDialogId, aguardandoReport, reportAte = -1, false, 0
+local reportDialogTexto = ''
 local ultimoAvisoReport, ultimoAvisoReportEm = '', 0
 local horarioServidor, horarioServidorEm = '--:--:--', 0
 local dataServidor = '--/--/--'
@@ -85,6 +89,10 @@ local painelTvMimguiPosCarregada, painelTvMimguiUltimoSave = false, 0
 local monitorSsAberto = false
 local novatoTelagemPendenteId = nil
 local atendimentoPosCarregada, atendimentoUltimoSave = false, 0
+local suportePosCarregada, suporteUltimoSave = false, 0
+local emAtendimento, atendimentoNick, atendimentoRg = false, '', ''
+local atendimentoInicio = 0
+local atendimentoOffAte, atendimentoTempoFinal = 0, 0
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -477,6 +485,23 @@ local function copiarResumoTelagem(rg, info)
 end
 _G.HZMobileCopiarResumoTelagem = copiarResumoTelagem
 
+local function enviarAvisoTelagemReport(nick, rg)
+    local agora = os.clock and os.clock() or 0
+    if not aguardandoReport or agora > reportAte then return false end
+    nick, rg = tostring(nick or ''), tostring(rg or '')
+    if nick == '' or nick == '?' or rg == '' then return false end
+    local chave = nick:lower() .. '|' .. rg
+    if chave ~= ultimoAvisoReport or agora - ultimoAvisoReportEm > 6 then
+        ultimoAvisoReport, ultimoAvisoReportEm = chave, agora
+        lua_thread.create(function()
+            wait(350)
+            sampSendChat('/ac Estou telando o Player ' .. nick)
+        end)
+    end
+    aguardandoReport, reportAte = false, 0
+    return true
+end
+
 local function navegar(novatos, direcao)
     if not exigirStaff('a navegacao TV') then return end
     if not moduloAtivo('navegacao_tv') then return chat('{FF5555}', 'Modulo de navegacao desativado ou bloqueado para o cargo.') end
@@ -708,6 +733,71 @@ local function instalarPainelTvMimgui()
 
         mimgui.OnFrame(
             function()
+                if atendimentoOffAte > 0 and os.time() > atendimentoOffAte then
+                    atendimentoOffAte, atendimentoTempoFinal = 0, 0
+                    atendimentoNick, atendimentoRg, atendimentoInicio = '', '', 0
+                end
+                return staffLogada and moduloAtivo('atendimento')
+                    and (emAtendimento or atendimentoOffAte > 0)
+            end,
+            function()
+                local flags = 0
+                if mimgui.WindowFlags then
+                    flags = (mimgui.WindowFlags.NoCollapse or 0)
+                        + (mimgui.WindowFlags.NoResize or 0)
+                        + (mimgui.WindowFlags.NoScrollbar or 0)
+                end
+                if not suportePosCarregada and type(mimgui.SetNextWindowPos) == 'function' then
+                    mimgui.SetNextWindowPos(
+                        mimgui.ImVec2(tonumber(cfg.interface.suporte_x) or 18,
+                            tonumber(cfg.interface.suporte_y) or 280),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0
+                    )
+                    suportePosCarregada = true
+                end
+                if type(mimgui.SetNextWindowSize) == 'function' then
+                    mimgui.SetNextWindowSize(mimgui.ImVec2(315, 175),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+                end
+
+                mimgui.Begin('SUPORTE ATIVO##setor_mobile_suporte', nil, flags)
+                mimgui.Text('STATUS: ' .. (emAtendimento and 'ON' or 'OFF'))
+                if type(mimgui.Separator) == 'function' then mimgui.Separator() end
+                mimgui.Text('JOGADOR: ' .. tostring(atendimentoNick ~= '' and atendimentoNick or '?'))
+                mimgui.Text('RG: ' .. tostring(atendimentoRg ~= '' and atendimentoRg or '?'))
+                local duracao = emAtendimento
+                    and math.max(0, os.time() - (tonumber(atendimentoInicio) or os.time()))
+                    or math.max(0, tonumber(atendimentoTempoFinal) or 0)
+                mimgui.Text(string.format('TEMPO: %02d:%02d', math.floor(duracao / 60), duracao % 60))
+                if type(mimgui.Separator) == 'function' then mimgui.Separator() end
+                if emAtendimento then
+                    if mimgui.Button('FINALIZAR /FA', mimgui.ImVec2(285, 38)) then
+                        sampSendChat('/fa')
+                        emAtendimento = false
+                    end
+                else
+                    mimgui.Text('Jogador desconectado. Fechando em 5 segundos...')
+                end
+
+                if type(mimgui.GetWindowPos) == 'function' then
+                    local pos = mimgui.GetWindowPos()
+                    local px, py = math.floor(pos.x or 0), math.floor(pos.y or 0)
+                    if px ~= tonumber(cfg.interface.suporte_x)
+                        or py ~= tonumber(cfg.interface.suporte_y) then
+                        cfg.interface.suporte_x, cfg.interface.suporte_y = px, py
+                        local agora = os.clock and os.clock() or 0
+                        if agora - suporteUltimoSave >= 1 then
+                            suporteUltimoSave = agora
+                            inicfg.save(cfg, CONFIG_FILE)
+                        end
+                    end
+                end
+                mimgui.End()
+            end
+        )
+
+        mimgui.OnFrame(
+            function()
                 return monitorSsAberto and staffLogada and moduloAtivo('monitoramento')
             end,
             function()
@@ -852,11 +942,16 @@ local function capturarHorarioServidor(texto)
     local baixo = texto:lower()
     -- Durante a telagem pela TAB, o RG chega pelos textdraws do servidor.
     -- Vincula esse RG ao nick online selecionado para todas as acoes do painel.
-    if painelTvFlutuante and nickAtual and nickAtual ~= '' then
+    if painelTvFlutuante then
         local rgTv = texto:match('[Rr][Gg][:%s]+(%d+)')
         if rgTv then
             rgAtual = rgTv
-            salvarRG(rgTv, nickAtual)
+            local nickValido = nickAtual and nickAtual ~= ''
+                and nickAtual ~= '?' and nickAtual ~= 'Aguardando servidor'
+            if nickValido then
+                salvarRG(rgTv, nickAtual)
+                enviarAvisoTelagemReport(nickAtual, rgTv)
+            end
             if novatoTelagemPendenteId then
                 novatoTelagemPendenteId = nil
                 local rgNovato = tostring(rgTv)
@@ -1384,7 +1479,29 @@ function samp.onSendClickPlayer(playerId, source)
     nickAtual = tostring(sampGetPlayerNickname(id) or '?')
     rgAtual = nil
     painelTvFlutuante = true
-    aguardandoReport, reportDialogId, reportAte = false, -1, 0
+    -- O servidor pode concluir a escolha do /reports simulando o mesmo clique
+    -- usado pelo TAB. Nesse caso, preserva a autorizacao temporaria para que a
+    -- confirmacao da telagem envie o aviso no /ac.
+    local agora = os.clock and os.clock() or 0
+    if not (aguardandoReport and agora <= reportAte) then
+        aguardandoReport, reportDialogId, reportAte = false, -1, 0
+    end
+end
+
+function samp.onPlayerQuit(playerId, reason)
+    if not emAtendimento then return end
+    local nickSaida = ''
+    if type(sampGetPlayerNickname) == 'function' then
+        local ok, valor = pcall(sampGetPlayerNickname, tonumber(playerId))
+        if ok then nickSaida = tostring(valor or '') end
+    end
+    local saiuAtendido = tostring(playerId) == tostring(atendimentoRg)
+        or (nickSaida ~= '' and nickSaida:lower() == tostring(atendimentoNick):lower())
+    if saiuAtendido then
+        atendimentoTempoFinal = math.max(0, os.time() - (tonumber(atendimentoInicio) or os.time()))
+        emAtendimento, atendimentoOffAte = false, os.time() + 5
+        chat('{FF5555}', 'Atendimento encerrado: ' .. atendimentoNick .. ' desconectou.')
+    end
 end
 
 function samp.onShowTextDraw(id, data)
@@ -1407,6 +1524,7 @@ function samp.onShowDialog(dialogId, style, title, button1, button2, text)
     local agora = os.clock and os.clock() or 0
     if reportDialogId == -2 and agora <= reportAte then
         reportDialogId = tonumber(dialogId) or -1
+        reportDialogTexto = tostring(text or '')
     end
 end
 
@@ -1415,6 +1533,26 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         reportDialogId = -1
         aguardandoReport = tonumber(button) == 1
         reportAte = aguardandoReport and ((os.clock and os.clock() or 0) + 15) or 0
+        if aguardandoReport then
+            painelTvFlutuante = true
+            local indice, linhaEscolhida = 0, nil
+            for linha in tostring(reportDialogTexto or ''):gmatch('[^\r\n]+') do
+                if indice == (tonumber(listboxId) or -1) then linhaEscolhida = clean(linha) break end
+                indice = indice + 1
+            end
+            if linhaEscolhida then
+                local nomeLinha, idLinha = linhaEscolhida:match('([%w_]+)%s*%[(%d+)%]')
+                idLinha = tonumber(idLinha)
+                if idLinha and sampIsPlayerConnected(idLinha) then
+                    nickAtual = tostring(sampGetPlayerNickname(idLinha) or nomeLinha or 'Aguardando servidor')
+                elseif nomeLinha and nomeLinha ~= '' then
+                    nickAtual = nomeLinha
+                end
+            end
+            nickAtual = nickAtual or 'Aguardando servidor'
+            rgAtual = nil
+        end
+        reportDialogTexto = ''
         return
     end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
@@ -1637,7 +1775,10 @@ function samp.onSendCommand(command)
         loginStaffPendenteAte = 0
         dialogAction = nil
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
+        reportDialogTexto = ''
         painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
+        emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
+        atendimentoOffAte, atendimentoTempoFinal = 0, 0
         return
     end
     -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
@@ -1660,11 +1801,16 @@ function samp.onSendCommand(command)
     end
     if cmdLimpo == '/reports' or cmdLimpo:match('^/reports%s+') then
         reportDialogId, aguardandoReport = -2, false
+        reportDialogTexto = ''
         reportAte = (os.clock and os.clock() or 0) + 60
     elseif cmdLimpo:match('^/tv%s+') then
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
     elseif cmdLimpo == '/tvoff' then
         painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
+    end
+    if cmdLimpo == '/fa' then
+        emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
+        atendimentoOffAte, atendimentoTempoFinal = 0, 0
     end
     local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
     if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
@@ -1690,6 +1836,23 @@ end
 function samp.onServerMessage(color, text)
     local ct = clean(text)
     local baixo = ct:lower()
+
+    local nomeAtendimento, rgAtendimento =
+        ct:match('[Aa]tendendo o%(a%) jogador%(a%)%s+([%w_]+)%[(%d+)%]')
+    if not nomeAtendimento then
+        nomeAtendimento, rgAtendimento =
+            ct:match('[Aa]tendendo.-jogador.-([%w_]+)%s*%[(%d+)%]')
+    end
+    if nomeAtendimento and rgAtendimento and staffLogada and moduloAtivo('atendimento') then
+        atendimentoNick, atendimentoRg = nomeAtendimento, rgAtendimento
+        atendimentoInicio, emAtendimento = os.time(), true
+        atendimentoOffAte, atendimentoTempoFinal = 0, 0
+    end
+    if emAtendimento and (baixo:find('atendimento finalizado', 1, true)
+        or baixo:find('finalizou o atendimento', 1, true)) then
+        emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
+        atendimentoOffAte, atendimentoTempoFinal = 0, 0
+    end
 
     -- Identificacao automatica segura, equivalente ao PC: a mensagem precisa
     -- citar o nick local ou ser a resposta direta a um /la recente.
@@ -1731,15 +1894,7 @@ function samp.onServerMessage(color, text)
     if tvNick and tvRg then
         salvarRG(tvRg, tvNick); rgAtual, nickAtual = tvRg, tvNick
         painelTvFlutuante = true
-        local agora = os.clock and os.clock() or 0
-        if aguardandoReport and agora <= reportAte then
-            local chave = tvNick:lower() .. '|' .. tvRg
-            if chave ~= ultimoAvisoReport or agora - ultimoAvisoReportEm > 6 then
-                ultimoAvisoReport, ultimoAvisoReportEm = chave, agora
-                lua_thread.create(function() wait(350) sampSendChat('/ac Estou telando o Player ' .. tvNick) end)
-            end
-            aguardandoReport, reportAte = false, 0
-        end
+        enviarAvisoTelagemReport(tvNick, tvRg)
     end
 
     if pendente and ct:find('HZ%-ADMIN') then
