@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.38'
+local VERSION = '3.39'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -72,6 +72,9 @@ inicfg.save(cfg, CONFIG_FILE)
 
 local cache, monitorados = {}, {}
 local rgAtual, nickAtual = nil, nil
+-- O MonetLoader pode devolver score 0 antes de sincronizar o TAB. Esse valor
+-- so deve valer como Level 0 quando for confirmado nas informacoes do servidor.
+local levelAtualConfirmado = nil
 local pendente = nil
 local navNovato, navTodos = 0, 0
 local staffLogada = false
@@ -114,6 +117,7 @@ local function prepararAberturaReports()
     reportDialogId, aguardandoReport = -2, false
     reportDialogTexto = ''
     reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
+    levelAtualConfirmado = nil
     reportAte = (os.clock and os.clock() or 0) + 60
 end
 
@@ -497,6 +501,7 @@ local function telarJogadorPelaTab(jogador)
     -- Nao envia cache historico ao servidor: IDs podem ser reutilizados.
     -- O RG correto sera capturado da resposta/textdraw desta telagem.
     rgAtual = nil
+    levelAtualConfirmado = nil
     painelTvFlutuante = true
     aguardandoReport, reportDialogId, reportAte = false, -1, 0
     sampSendClickPlayer(tonumber(jogador.id), 0)
@@ -566,7 +571,10 @@ local function dadosJogadorAtual()
     if nickAtual then
         for id = 0, sampGetMaxPlayerId(false) do
             if sampIsPlayerConnected(id) and tostring(sampGetPlayerNickname(id)):lower() == tostring(nickAtual):lower() then
-                idAtual, levelAtual = id, tostring(sampGetPlayerScore(id) or '?')
+                local score = tonumber(sampGetPlayerScore(id))
+                local levelSeguro = levelAtualConfirmado
+                if levelSeguro == nil and score and score > 0 then levelSeguro = score end
+                idAtual, levelAtual = id, tostring(levelSeguro ~= nil and levelSeguro or '?')
                 break
             end
         end
@@ -978,6 +986,11 @@ end
 local function capturarHorarioServidor(texto)
     texto = clean(texto):gsub('_', ' '):gsub('%s+', ' ')
     local baixo = texto:lower()
+    local levelServidor = texto:match('[Ll][Ee][Vv][Ee][Ll][:%s]+(%d+)')
+        or texto:match('[Nn][Ii][Vv][Ee][Ll][:%s]+(%d+)')
+    if levelServidor and (painelTvFlutuante or aguardandoReport) then
+        levelAtualConfirmado = tonumber(levelServidor)
+    end
     -- No /reports, os dados do alvo podem chegar separados em varios
     -- textdraws. Guarda o nick online e so confirma quando o RG tambem chegar.
     if aguardandoReport then
@@ -1100,12 +1113,18 @@ local function abrirTabelaPunicoes(tipo)
 end
 
 local function levelDoRG(rg)
+    if tostring(rg or '') == tostring(rgAtual or '') and levelAtualConfirmado ~= nil then
+        return tonumber(levelAtualConfirmado)
+    end
     local info = cache[tostring(rg)]
     local nick = info and tostring(info.nick or ''):lower() or ''
     if nick == '' then return nil end
     for id = 0, sampGetMaxPlayerId(false) do
         if sampIsPlayerConnected(id) and tostring(sampGetPlayerNickname(id) or ''):lower() == nick then
-            return tonumber(sampGetPlayerScore(id))
+            local score = tonumber(sampGetPlayerScore(id))
+            -- Zero sem confirmacao pode ser apenas o placar ainda nao sincronizado.
+            if score and score > 0 then return score end
+            return nil
         end
     end
     return nil
@@ -1139,6 +1158,9 @@ local function confirmarPunicaoTabela(rg)
         return
     end
     local level = levelDoRG(rg)
+    if level == nil then
+        return chat('{FFFF00}', 'Level ainda nao confirmado. Aguarde as informacoes do jogador e tente novamente.')
+    end
     local tempo = tonumber(item[3]) or 0
     if level and level >= 0 and level <= 30 then
         tempo = item[2]:lower():find('dark rp', 1, true) and 150 or 50
@@ -1539,6 +1561,7 @@ function samp.onSendClickPlayer(playerId, source)
     if not id or not sampIsPlayerConnected(id) then return end
     nickAtual = tostring(sampGetPlayerNickname(id) or '?')
     rgAtual = nil
+    levelAtualConfirmado = nil
     painelTvFlutuante = true
     -- O servidor pode concluir a escolha do /reports simulando o mesmo clique
     -- usado pelo TAB. Nesse caso, preserva a autorizacao temporaria para que a
@@ -1606,7 +1629,7 @@ local function processarRespostaReport(dialogId, button, listboxId, input)
         if aguardandoReport then
             -- A linha da lista pertence ao reportador. O alvo correto so sera
             -- definido quando o servidor responder com as informacoes da telagem.
-            painelTvFlutuante, nickAtual, rgAtual = false, nil, nil
+            painelTvFlutuante, nickAtual, rgAtual, levelAtualConfirmado = false, nil, nil, nil
             reportAlvoNick, reportAlvoRg = nil, nil
             reportSelecaoEm = os.clock and os.clock() or 0
         end
@@ -1859,7 +1882,7 @@ function samp.onSendCommand(command)
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
         reportDialogTexto = ''
         reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
-        painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
+        painelTvFlutuante, rgAtual, nickAtual, levelAtualConfirmado = false, nil, nil, nil
         emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
         saciarmeProximo = 0
@@ -1886,6 +1909,7 @@ function samp.onSendCommand(command)
         -- No Horizonte, numero digitado em /tv e RG, nunca o ID do TAB.
         rgAtual = trim(buscaTv)
         nickAtual = cache[rgAtual] and cache[rgAtual].nick or 'Aguardando servidor'
+        levelAtualConfirmado = nil
     end
     if cmdLimpo == '/reports' or cmdLimpo:match('^/reports%s+') then
         prepararAberturaReports()
@@ -1893,7 +1917,7 @@ function samp.onSendCommand(command)
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
         reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
     elseif cmdLimpo == '/tvoff' then
-        painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
+        painelTvFlutuante, rgAtual, nickAtual, levelAtualConfirmado = false, nil, nil, nil
     end
     if cmdLimpo == '/fa' then
         emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
@@ -1929,7 +1953,7 @@ function samp.onServerMessage(color, text)
         or baixo:find('jogador offline', 1, true)) then
         aguardandoReport, reportAte = false, 0
         reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
-        painelTvFlutuante, nickAtual, rgAtual = false, nil, nil
+        painelTvFlutuante, nickAtual, rgAtual, levelAtualConfirmado = false, nil, nil, nil
     end
 
     local nomeAtendimento, rgAtendimento =
@@ -2004,10 +2028,15 @@ function samp.onServerMessage(color, text)
     if not nick then rg, nick = ct:match('RG[:%s]+(%d+).-Nick[:%s]+([%w_]+)') end
     if nick and rg then
         local nickOnline = jogadorOnlinePorNick(nick)
-        if not aguardandoReport or nickOnline then
-            nick = nickOnline or nick
-            salvarRG(rg, nick)
-            rgAtual, nickAtual = rg, nick
+        if nickOnline then
+            nick = nickOnline
+            salvarRG(rg, nickOnline)
+            local mesmoAlvo = tostring(rgAtual or '') == tostring(rg)
+                or tostring(nickAtual or ''):lower() == tostring(nickOnline):lower()
+                or nickAtual == 'Aguardando servidor'
+            if aguardandoReport or (painelTvFlutuante and mesmoAlvo) then
+                rgAtual, nickAtual = rg, nickOnline
+            end
             if aguardandoReport then
                 painelTvFlutuante = true
                 enviarAvisoTelagemReport(nickAtual, rgAtual)
@@ -2018,6 +2047,9 @@ function samp.onServerMessage(color, text)
     if tvNick and tvRg then
         local tvNickOnline = jogadorOnlinePorNick(tvNick)
         if tvNickOnline then
+            local alvoMudou = tostring(rgAtual or '') ~= tostring(tvRg)
+                and tostring(nickAtual or ''):lower() ~= tostring(tvNickOnline):lower()
+            if alvoMudou then levelAtualConfirmado = nil end
             salvarRG(tvRg, tvNickOnline); rgAtual, nickAtual = tvRg, tvNickOnline
             painelTvFlutuante = true
             enviarAvisoTelagemReport(tvNickOnline, tvRg)
@@ -2077,7 +2109,7 @@ function main()
                 abrirMonitor()
             elseif acao == 'off' then
                 sampSendChat('/tvoff')
-                painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
+                painelTvFlutuante, rgAtual, nickAtual, levelAtualConfirmado = false, nil, nil, nil
             end
         end
     end
