@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.51'
+local VERSION = '3.53'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -174,7 +174,6 @@ local D_INPUT_ALVO_TABELA = 28018
 local D_CONFIRMAR_TABELA = 28019
 local D_SELETOR_TV = 28020
 local D_MOD_CATEGORIA = 28021
-local D_TAMANHO_PAINEIS = 28023
 local dialogAction = nil
 local punicaoTabelaSelecionada = nil
 local jogadoresSeletorTV = {}
@@ -707,10 +706,10 @@ local function instalarPainelTvMimgui()
         -- Margem adicional evita recortes de fontes/densidades diferentes,
         -- mantendo dimensoes explicitas para a troca 80/100/120 funcionar.
         if type(mimgui.SetNextWindowSize) == 'function' then
-            mimgui.SetNextWindowSize(mimgui.ImVec2(largura + 30, altura + 25),
+            mimgui.SetNextWindowSize(mimgui.ImVec2(largura + 12, altura + 10),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
-        return escala, x, y, largura + 30, altura + 25
+        return escala, x, y, largura + 12, altura + 10
     end
 
     local function escalarFonteJanela(escala)
@@ -719,10 +718,28 @@ local function instalarPainelTvMimgui()
         end
     end
 
+    local function textoResponsivo(texto)
+        if type(mimgui.TextWrapped) == 'function' then
+            mimgui.TextWrapped(tostring(texto))
+        else
+            mimgui.Text(tostring(texto))
+        end
+    end
+
+    local function larguraInterna(fallback)
+        if type(mimgui.GetContentRegionAvail) == 'function' then
+            local okArea, area = pcall(mimgui.GetContentRegionAvail)
+            if okArea and area and tonumber(area.x) and tonumber(area.x) > 20 then
+                return tonumber(area.x)
+            end
+        end
+        return fallback
+    end
+
     local escalasPaineis = {
-        painel_tv_escala = tonumber(cfg.interface.painel_tv_escala) or 1.0,
-        atendimento_escala = tonumber(cfg.interface.atendimento_escala) or 1.0,
-        suporte_escala = tonumber(cfg.interface.suporte_escala) or 1.0
+        painel_tv_escala = 1.0,
+        atendimento_escala = 1.0,
+        suporte_escala = 1.0
     }
 
     local ok, erro = pcall(function()
@@ -754,23 +771,37 @@ local function instalarPainelTvMimgui()
                 end
                 escalarFonteJanela(escala)
                 local idAtual, levelAtual = dadosJogadorAtual()
-                mimgui.Text('NICK: ' .. tostring(nickAtual or 'Aguardando servidor'))
-                mimgui.Text('ID: ' .. tostring(idAtual)
+                textoResponsivo('NICK: ' .. tostring(nickAtual or 'Aguardando servidor'))
+                textoResponsivo('ID: ' .. tostring(idAtual)
                     .. '  |  RG: ' .. tostring(rgAtual or 'aguardando')
                     .. '  |  LEVEL: ' .. tostring(levelAtual))
                 local monitorInfo = rgAtual and monitorados[tostring(rgAtual)] or nil
-                mimgui.Text(monitorInfo and ('MONITORADO: ' .. tostring(monitorInfo.motivo))
+                textoResponsivo(monitorInfo and ('MONITORADO: ' .. tostring(monitorInfo.motivo))
                     or 'MONITORAMENTO: nao monitorado')
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
 
-                if mimgui.Button('MENU', mimgui.ImVec2(72 * escala, 34 * escala)) then painelTvAcaoPendente = 'menu' end
-                mimgui.SameLine(0, 3 * escala)
-                if mimgui.Button('PUNIR', mimgui.ImVec2(72 * escala, 34 * escala)) then painelTvAcaoPendente = 'punir' end
-                mimgui.SameLine(0, 3 * escala)
-                if mimgui.Button('ACOES', mimgui.ImVec2(78 * escala, 34 * escala)) then painelTvAcaoPendente = 'acoes' end
-                mimgui.SameLine(0, 3 * escala)
-                if mimgui.Button('TV OFF', mimgui.ImVec2(82 * escala, 34 * escala)) then painelTvAcaoPendente = 'off' end
-                if mimgui.Button('MONITORAMENTO', mimgui.ImVec2(330 * escala, 32 * escala)) then
+                local disponivel = larguraInterna(330 * escala)
+                local gap = 4 * escala
+                if disponivel >= 280 * escala then
+                    local bw = (disponivel - gap * 3) / 4
+                    if mimgui.Button('MENU', mimgui.ImVec2(bw, 34 * escala)) then painelTvAcaoPendente = 'menu' end
+                    mimgui.SameLine(0, gap)
+                    if mimgui.Button('PUNIR', mimgui.ImVec2(bw, 34 * escala)) then painelTvAcaoPendente = 'punir' end
+                    mimgui.SameLine(0, gap)
+                    if mimgui.Button('ACOES', mimgui.ImVec2(bw, 34 * escala)) then painelTvAcaoPendente = 'acoes' end
+                    mimgui.SameLine(0, gap)
+                    if mimgui.Button('TV OFF', mimgui.ImVec2(bw, 34 * escala)) then painelTvAcaoPendente = 'off' end
+                else
+                    local bw = (disponivel - gap) / 2
+                    if mimgui.Button('MENU', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'menu' end
+                    mimgui.SameLine(0, gap)
+                    if mimgui.Button('PUNIR', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'punir' end
+                    if mimgui.Button('ACOES', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'acoes' end
+                    mimgui.SameLine(0, gap)
+                    if mimgui.Button('TV OFF', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'off' end
+                end
+                disponivel = larguraInterna(disponivel)
+                if mimgui.Button('MONITORAMENTO', mimgui.ImVec2(disponivel, 32 * escala)) then
                     painelTvAcaoPendente = 'monitor'
                 end
 
@@ -818,17 +849,23 @@ local function instalarPainelTvMimgui()
                 end
                 escalarFonteJanela(escala)
                 local nivel = nivelCargo(cfg.dados.cargo)
+                local disponivel = larguraInterna(235 * escala)
                 if nivel >= 2 then
-                    if mimgui.Button('/REPORTS', mimgui.ImVec2(112 * escala, 38 * escala)) then
-                        prepararAberturaReports()
-                        sampSendChat('/reports')
-                    end
-                    mimgui.SameLine(0, 3 * escala)
-                    if mimgui.Button('/FILA', mimgui.ImVec2(112 * escala, 38 * escala)) then
-                        sampSendChat('/fila')
+                    local gap, bw = 4 * escala, (disponivel - 4 * escala) / 2
+                    if bw >= 88 * escala then
+                        if mimgui.Button('/REPORTS', mimgui.ImVec2(bw, 38 * escala)) then
+                            prepararAberturaReports(); sampSendChat('/reports')
+                        end
+                        mimgui.SameLine(0, gap)
+                        if mimgui.Button('/FILA', mimgui.ImVec2(bw, 38 * escala)) then sampSendChat('/fila') end
+                    else
+                        if mimgui.Button('/REPORTS', mimgui.ImVec2(disponivel, 34 * escala)) then
+                            prepararAberturaReports(); sampSendChat('/reports')
+                        end
+                        if mimgui.Button('/FILA', mimgui.ImVec2(disponivel, 34 * escala)) then sampSendChat('/fila') end
                     end
                 else
-                    if mimgui.Button('/FILA', mimgui.ImVec2(235 * escala, 38 * escala)) then
+                    if mimgui.Button('/FILA', mimgui.ImVec2(disponivel, 38 * escala)) then
                         sampSendChat('/fila')
                     end
                 end
@@ -882,18 +919,19 @@ local function instalarPainelTvMimgui()
                         mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
                 end
                 escalarFonteJanela(escala)
-                mimgui.Text('STATUS: ' .. (emAtendimento and 'ON' or 'OFF'))
+                textoResponsivo('STATUS: ' .. (emAtendimento and 'ON' or 'OFF'))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
-                mimgui.Text('JOGADOR: ' .. tostring(atendimentoNick ~= '' and atendimentoNick or '?'))
-                mimgui.Text('RG: ' .. tostring(atendimentoRg ~= '' and atendimentoRg or '?'))
+                textoResponsivo('JOGADOR: ' .. tostring(atendimentoNick ~= '' and atendimentoNick or '?'))
+                textoResponsivo('RG: ' .. tostring(atendimentoRg ~= '' and atendimentoRg or '?'))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
                 if emAtendimento then
-                    if mimgui.Button('FINALIZAR /FA', mimgui.ImVec2(285 * escala, 38 * escala)) then
+                    if mimgui.Button('FINALIZAR /FA',
+                        mimgui.ImVec2(larguraInterna(285 * escala), 38 * escala)) then
                         sampSendChat('/fa')
                         emAtendimento = false
                     end
                 else
-                    mimgui.Text('Jogador desconectado. Fechando em 5 segundos...')
+                    textoResponsivo('Jogador desconectado. Fechando em 5 segundos...')
                 end
 
                 if type(mimgui.GetWindowPos) == 'function' then
@@ -998,7 +1036,6 @@ local function mostrarAjuda()
     chat('{48C6FF}', '/setorir RG | /setortrazer RG | /setorvida RG valor | /setorcolete RG valor')
     chat('{48C6FF}', '/setorreviver RG | /setorcongelar RG | /setordescongelar RG | /setorarmas RG')
     chat('{48C6FF}', '/mods | /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
-    chat('{48C6FF}', '/setortamanho - Compacto, Normal ou Grande para todos os paineis.')
 end
 
 local function dialogo(id, titulo, texto, botao1, botao2, estilo)
@@ -1496,13 +1533,6 @@ local function registrarComandos()
         end
         abrirModulos()
     end)
-    sampRegisterChatCommand('setortamanho', function()
-        if not exigirStaff('/setortamanho') then return end
-        local atual = math.floor((tonumber(cfg.interface.painel_tv_escala) or 1) * 100)
-        dialogo(D_TAMANHO_PAINEIS, 'SETOR - TAMANHO DOS PAINEIS | ATUAL ' .. atual .. '%',
-            'Compacto - 80%\nNormal - 100%\nGrande - 120%',
-            'Aplicar', 'Cancelar', 2)
-    end)
     sampRegisterChatCommand('tvpainel', function()
         if not exigirStaff('/tvpainel') then return end
         if not painelTvFlutuante then return chat('{FFFF00}', 'Tele um jogador antes de abrir o Painel TV.') end
@@ -1722,7 +1752,7 @@ _G.HZMobileProcessarRespostaReport = processarRespostaReport
 function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     if _G.HZMobileProcessarRespostaReport(dialogId, button, listboxId, input) then return end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > D_TAMANHO_PAINEIS then return end
+    if dialogId < D_MAIN or dialogId > 28022 then return end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
@@ -1736,7 +1766,6 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         end
         if dialogId == D_SELETOR_TV then return false end
         if dialogId == D_MODULOS then return false end
-        if dialogId == D_TAMANHO_PAINEIS then return false end
         if dialogId == D_TABELA_PUNICAO then
             lua_thread.create(function() wait(150) abrirPunicoes() end)
             return false
@@ -1780,33 +1809,6 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if categoria then
             local nomeCategoria = categoria[1]
             lua_thread.create(function() wait(150) abrirModulos(nomeCategoria) end)
-        end
-    elseif dialogId == D_TAMANHO_PAINEIS then
-        local escalas = {0.8, 1.0, 1.2}
-        local nova = escalas[(tonumber(listboxId) or -1) + 1]
-        if nova then
-            cfg.interface.painel_tv_escala = nova
-            cfg.interface.atendimento_escala = nova
-            cfg.interface.suporte_escala = nova
-            inicfg.save(cfg, CONFIG_FILE)
-            chat('{3EDC81}', 'Tamanho salvo em ' .. math.floor(nova * 100)
-                .. '%. Recarregando somente o mod...')
-            lua_thread.create(function()
-                wait(700)
-                local recarregou = false
-                if type(thisScript) == 'function' then
-                    local okScript, scriptAtual = pcall(thisScript)
-                    if okScript and scriptAtual then
-                        local okReload, reload = pcall(function() return scriptAtual.reload end)
-                        if okReload and type(reload) == 'function' then
-                            recarregou = pcall(function() scriptAtual:reload() end)
-                        end
-                    end
-                end
-                if not recarregou then
-                    chat('{FFFF00}', 'Tamanho salvo. Use /reloadall ou reconecte para aplicar.')
-                end
-            end)
         end
     elseif dialogId == D_MOD_CATEGORIA then
         local id = (_G.HZMobileModsIdsVisiveis or {})[(tonumber(listboxId) or -1) + 1]
