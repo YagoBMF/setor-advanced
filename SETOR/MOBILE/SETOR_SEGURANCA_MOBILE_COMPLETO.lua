@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.44'
+local VERSION = '3.46'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -703,14 +703,13 @@ local function instalarPainelTvMimgui()
             mimgui.SetNextWindowPos(mimgui.ImVec2(x, y),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
-        -- O tamanho e calculado pelo proprio mimgui conforme o conteudo.
-        -- Isso evita recortes causados por fontes/densidades diferentes.
-        if not (mimgui.WindowFlags and mimgui.WindowFlags.AlwaysAutoResize)
-            and type(mimgui.SetNextWindowSize) == 'function' then
+        -- Margem adicional evita recortes de fontes/densidades diferentes,
+        -- mantendo dimensoes explicitas para a troca 80/100/120 funcionar.
+        if type(mimgui.SetNextWindowSize) == 'function' then
             mimgui.SetNextWindowSize(mimgui.ImVec2(largura + 30, altura + 25),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
-        return escala, x, y
+        return escala, x, y, largura + 30, altura + 25
     end
 
     local function escalarFonteJanela(escala)
@@ -751,9 +750,8 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
-                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
-                local escala = prepararJanelaResponsiva(345, 190,
+                local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(345, 190,
                     tonumber(cfg.interface.painel_tv_x) or 18,
                     tonumber(cfg.interface.painel_tv_y) or 250,
                     not painelTvMimguiPosCarregada,
@@ -763,6 +761,10 @@ local function instalarPainelTvMimgui()
                 end
 
                 mimgui.Begin('SETOR TV##setor_mobile_tv', nil, flags)
+                if type(mimgui.SetWindowSize) == 'function' then
+                    pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+                end
                 escalarFonteJanela(escala)
                 local idAtual, levelAtual = dadosJogadorAtual()
                 mimgui.Text('NICK: ' .. tostring(nickAtual or 'Aguardando servidor'))
@@ -812,9 +814,8 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
-                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
-                local escala = prepararJanelaResponsiva(265, 92,
+                local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(265, 92,
                     tonumber(cfg.interface.atendimento_x) or 18,
                     tonumber(cfg.interface.atendimento_y) or 170,
                     not atendimentoPosCarregada,
@@ -824,6 +825,10 @@ local function instalarPainelTvMimgui()
                 end
 
                 mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento', nil, flags)
+                if type(mimgui.SetWindowSize) == 'function' then
+                    pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+                end
                 escalarFonteJanela(escala)
                 local nivel = nivelCargo(cfg.dados.cargo)
                 if nivel >= 2 then
@@ -874,9 +879,8 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
-                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
-                local escala = prepararJanelaResponsiva(315, 150,
+                local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(315, 150,
                     tonumber(cfg.interface.suporte_x) or 18,
                     tonumber(cfg.interface.suporte_y) or 280,
                     not suportePosCarregada,
@@ -886,6 +890,10 @@ local function instalarPainelTvMimgui()
                 end
 
                 mimgui.Begin('SUPORTE ATIVO##setor_mobile_suporte', nil, flags)
+                if type(mimgui.SetWindowSize) == 'function' then
+                    pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+                end
                 escalarFonteJanela(escala)
                 mimgui.Text('STATUS: ' .. (emAtendimento and 'ON' or 'OFF'))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
