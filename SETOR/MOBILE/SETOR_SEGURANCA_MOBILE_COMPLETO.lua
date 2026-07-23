@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.20'
+local VERSION = '3.22'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -76,6 +76,8 @@ local painelTvFonte, painelTvFonteTitulo = nil, nil
 local painelTvArrastando, painelTvOffsetX, painelTvOffsetY = false, 0, 0
 local painelTvToqueAnterior, painelTvAcaoPendente = false, nil
 local painelTvMimguiPosCarregada, painelTvMimguiUltimoSave = false, 0
+local monitorSsAberto = false
+local novatoTelagemPendenteId = nil
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -407,12 +409,19 @@ local function logAcao(tipo, rg, extra)
 end
 
 local function listaJogadores(somenteNovatos)
+    -- Algumas builds do MonetLoader so atualizam os levels depois desta
+    -- requisicao, embora os jogadores ja aparecam normalmente no TAB.
+    if type(sampRequestScoresAndPings) == 'function' then
+        pcall(sampRequestScoresAndPings)
+    elseif type(sampSendRequestScoresAndPings) == 'function' then
+        pcall(sampSendRequestScoresAndPings)
+    end
     local lista = {}
     for id = 0, sampGetMaxPlayerId(false) do
         if sampIsPlayerConnected(id) then
-            local level = sampGetPlayerScore(id) or 0
-            if not somenteNovatos or (level >= 0 and level <= 30) then
-                lista[#lista + 1] = { id = id, nick = sampGetPlayerNickname(id), level = level }
+            local level = tonumber(sampGetPlayerScore(id))
+            if not somenteNovatos or (level and level >= 0 and level <= 30) then
+                lista[#lista + 1] = { id = id, nick = sampGetPlayerNickname(id), level = level or 0 }
             end
         end
     end
@@ -442,6 +451,24 @@ end
 -- central de dialogos, que ja concentra todas as janelas do mobile.
 _G.HZMobileTelarPelaTab = telarJogadorPelaTab
 
+local function copiarResumoTelagem(rg, info)
+    info = type(info) == 'table' and info or {}
+    local texto = 'Nome: ' .. tostring(info.nick or 'Desconhecido')
+        .. '\nRG: ' .. tostring(rg)
+        .. '\nMotivo: ' .. tostring(info.motivo or 'Nao informado')
+    local copiado = false
+    if type(setClipboardText) == 'function' then copiado = pcall(setClipboardText, texto) end
+    if not copiado and MIMGUI_OK and type(mimgui.SetClipboardText) == 'function' then
+        copiado = pcall(mimgui.SetClipboardText, texto)
+    end
+    if copiado then
+        chat('{3EDC81}', 'Resumo da telagem copiado.')
+    else
+        chat('{48C6FF}', texto:gsub('\n', ' | '))
+    end
+end
+_G.HZMobileCopiarResumoTelagem = copiarResumoTelagem
+
 local function navegar(novatos, direcao)
     if not exigirStaff('a navegacao TV') then return end
     if not moduloAtivo('navegacao_tv') then return chat('{FF5555}', 'Modulo de navegacao desativado ou bloqueado para o cargo.') end
@@ -449,8 +476,12 @@ local function navegar(novatos, direcao)
     if #lista == 0 then return chat('{FFFF00}', 'Nenhum jogador disponivel nessa lista.') end
     if novatos then
         navNovato = ((navNovato - 1 + direcao) % #lista) + 1
+        -- No Horizonte, o clique do TAB descobre o RG. Em seguida a telagem
+        -- definitiva precisa ser feita com /tv RG.
+        novatoTelagemPendenteId = tonumber(lista[navNovato].id)
         telarJogadorPelaTab(lista[navNovato])
     else
+        novatoTelagemPendenteId = nil
         navTodos = ((navTodos - 1 + direcao) % #lista) + 1
         telarJogadorPelaTab(lista[navTodos])
     end
@@ -609,6 +640,75 @@ local function instalarPainelTvMimgui()
                 mimgui.End()
             end
         )
+
+        mimgui.OnFrame(
+            function()
+                return monitorSsAberto and staffLogada and moduloAtivo('monitoramento')
+            end,
+            function()
+                local flags = 0
+                if mimgui.WindowFlags then
+                    flags = (mimgui.WindowFlags.NoCollapse or 0)
+                        + (mimgui.WindowFlags.NoResize or 0)
+                end
+                mimgui.SetNextWindowSize(mimgui.ImVec2(470, 410),
+                    mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+                mimgui.Begin('SETOR - MONITORADOS /SS##setor_mobile_ss', nil, flags)
+                mimgui.Text('JOGADORES MONITORADOS')
+                if type(mimgui.Separator) == 'function' then mimgui.Separator() end
+
+                local lista = {}
+                for rg, info in pairs(monitorados) do
+                    local jogador = nil
+                    for id = 0, sampGetMaxPlayerId(false) do
+                        if sampIsPlayerConnected(id)
+                            and tostring(sampGetPlayerNickname(id) or ''):lower() == tostring(info.nick or ''):lower() then
+                            jogador = {id=id, nick=sampGetPlayerNickname(id), level=sampGetPlayerScore(id) or 0}
+                            break
+                        end
+                    end
+                    lista[#lista + 1] = {rg=tostring(rg), info=info, jogador=jogador}
+                end
+                table.sort(lista, function(a, b)
+                    if (a.jogador ~= nil) ~= (b.jogador ~= nil) then return a.jogador ~= nil end
+                    return tostring(a.info.nick) < tostring(b.info.nick)
+                end)
+
+                if type(mimgui.BeginChild) == 'function' then
+                    mimgui.BeginChild('##ss_lista', mimgui.ImVec2(0, 315), true)
+                end
+                if #lista == 0 then
+                    mimgui.Text('Nenhum jogador monitorado.')
+                else
+                    for i, item in ipairs(lista) do
+                        local status = item.jogador and 'ONLINE' or 'OFFLINE'
+                        mimgui.Text(tostring(item.info.nick) .. ' | ' .. status
+                            .. ' | RG ' .. item.rg)
+                        mimgui.Text('Motivo: ' .. tostring(item.info.motivo or 'Nao informado'))
+                        if item.jogador then
+                            if mimgui.Button('TELAR##ss_tv_' .. i, mimgui.ImVec2(120, 30)) then
+                                _G.HZMobileTelarPelaTab(item.jogador)
+                                monitorSsAberto = false
+                            end
+                            mimgui.SameLine()
+                        end
+                        if mimgui.Button('TELAGEM##ss_copy_' .. i, mimgui.ImVec2(140, 30)) then
+                            _G.HZMobileCopiarResumoTelagem(item.rg, item.info)
+                        end
+                        mimgui.SameLine()
+                        if mimgui.Button('REMOVER##ss_rm_' .. i, mimgui.ImVec2(140, 30)) then
+                            monitorados[item.rg] = nil
+                            salvarTabela(MONITOR_FILE, monitorados)
+                            chat('{3EDC81}', tostring(item.info.nick) .. ' removido do monitoramento.')
+                        end
+                        if type(mimgui.Separator) == 'function' then mimgui.Separator() end
+                    end
+                end
+                if type(mimgui.EndChild) == 'function' then mimgui.EndChild() end
+                if mimgui.Button('FECHAR', mimgui.ImVec2(150, 32)) then monitorSsAberto = false end
+                mimgui.End()
+            end
+        )
     end)
     if not ok then
         MIMGUI_OK = false
@@ -621,7 +721,7 @@ end
 local function mostrarAjuda()
     chat('{48C6FF}', 'Mobile ' .. VERSION .. ' | Perfil: /configadm Nome 1-5')
     chat('{48C6FF}', '/rgnome nome | /rgatual | /rgcache | /rgdel RG')
-    chat('{48C6FF}', '/monitor RG motivo | /desmonitor RG | /monitorados')
+    chat('{48C6FF}', '/monitor RG motivo | /desmonitor RG | /ss (painel de monitorados)')
     chat('{48C6FF}', '/tvn /tvnvoltar (novatos) | /tva /tavoltar (todos) | /tvoff')
     chat('{48C6FF}', '/setorir RG | /setortrazer RG | /setorvida RG valor | /setorcolete RG valor')
     chat('{48C6FF}', '/setorreviver RG | /setorcongelar RG | /setordescongelar RG | /setorarmas RG')
@@ -692,6 +792,14 @@ local function capturarHorarioServidor(texto)
         if rgTv then
             rgAtual = rgTv
             salvarRG(rgTv, nickAtual)
+            if novatoTelagemPendenteId then
+                novatoTelagemPendenteId = nil
+                local rgNovato = tostring(rgTv)
+                lua_thread.create(function()
+                    wait(150)
+                    sampSendChat('/tv ' .. rgNovato)
+                end)
+            end
         end
     end
     local temMes = baixo:match('jan') or baixo:match('fev') or baixo:match('mar') or baixo:match('abr')
@@ -712,15 +820,15 @@ end
 
 local function abrirPrincipal()
     dialogo(D_MAIN, 'SETOR SEGURANCA - MOBILE',
-        'TV / Telagem\nPunicoes\nAcoes administrativas\nCache de RG\nMonitoramento\nModulos\nAjuda no chat',
+        'Punicoes do jogador\nAcoes administrativas\nMonitoramento\nAuto Telagem\nCache de RG\nModulos\nAjuda no chat',
         'Abrir', 'Fechar', 2)
 end
 
 local function abrirTV()
-    if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
-    dialogo(D_TV, 'SETOR - TV / TELAGEM',
-        'Punicoes do jogador\nAcoes administrativas\nMonitoramento\nProximo novato\nNovato anterior\nProximo jogador\nJogador anterior\nMostrar jogador e RG\nDesligar TV',
-        'Executar', 'Voltar', 2)
+    if not moduloAtivo('navegacao_tv') then return chat('{FF5555}', 'Navegacao TV desativada ou bloqueada para o cargo.') end
+    dialogo(D_TV, 'SETOR - AUTO TELAGEM',
+        '<  NOVATOS\nNOVATOS  >\n<  JOGADORES\nJOGADORES  >\nMostrar jogador e RG\nDesligar TV',
+        'Selecionar', 'Voltar', 2)
 end
 
 local function abrirPunicoes()
@@ -1113,6 +1221,17 @@ local function registrarComandos()
         for rg, info in pairs(monitorados) do n = n + 1 chat('{48C6FF}', info.nick .. ' [RG ' .. rg .. '] - ' .. info.motivo) end
         if n == 0 then chat('{FFFF00}', 'Lista de monitorados vazia.') end
     end)
+    sampRegisterChatCommand('ss', function()
+        if not exigirStaff('/ss') then return end
+        if not moduloAtivo('monitoramento') then
+            return chat('{FF5555}', 'Monitoramento desativado ou bloqueado para o cargo.')
+        end
+        if MIMGUI_OK then
+            monitorSsAberto = true
+        else
+            _G.HZMobileAbrirListaMonitorados()
+        end
+    end)
     sampRegisterChatCommand('tvn', function() navegar(true, 1) end)
     sampRegisterChatCommand('tvnvoltar', function() navegar(true, -1) end)
     sampRegisterChatCommand('tva', function() navegar(false, 1) end)
@@ -1207,7 +1326,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
 
     if button == 0 then
         if dialogId == D_MAIN then return false end
-        if dialogId == D_TV then return false end
+        if dialogId == D_TV then
+            lua_thread.create(function() wait(150) abrirPrincipal() end)
+            return false
+        end
         if dialogId == D_SELETOR_TV then return false end
         if dialogId == D_MODULOS then return false end
         if dialogId == D_TABELA_PUNICAO then
@@ -1223,7 +1345,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             return false
         end
         if dialogId == D_PUNICOES then
-            lua_thread.create(function() wait(150) abrirTV() end)
+            lua_thread.create(function() wait(150) abrirPrincipal() end)
             return false
         end
         if dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
@@ -1275,26 +1397,29 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             _G.HZMobileTelarPelaTab(jogador)
         end
     elseif dialogId == D_MAIN then
-        if listboxId == 0 then abrirTV()
-        elseif listboxId == 1 then abrirPunicoes()
-        elseif listboxId == 2 then abrirAcoes()
-        elseif listboxId == 3 then abrirRG()
-        elseif listboxId == 4 then abrirMonitor()
+        if listboxId == 0 then abrirPunicoes()
+        elseif listboxId == 1 then abrirAcoes()
+        elseif listboxId == 2 then abrirMonitor()
+        elseif listboxId == 3 then abrirTV()
+        elseif listboxId == 4 then abrirRG()
         elseif listboxId == 5 then abrirModulos()
         elseif listboxId == 6 then mostrarAjuda() abrirPrincipal() end
     elseif dialogId == D_TV then
-        if listboxId == 0 then abrirPunicoes() return false
-        elseif listboxId == 1 then abrirAcoes() return false
-        elseif listboxId == 2 then abrirMonitor() return false
-        elseif listboxId == 3 then navegar(true, 1)
-        elseif listboxId == 4 then navegar(true, -1)
-        elseif listboxId == 5 then navegar(false, 1)
-        elseif listboxId == 6 then navegar(false, -1)
-        elseif listboxId == 7 then
+        if listboxId == 0 then navegar(true, -1)
+        elseif listboxId == 1 then navegar(true, 1)
+        elseif listboxId == 2 then navegar(false, -1)
+        elseif listboxId == 3 then navegar(false, 1)
+        elseif listboxId == 4 then
             if rgAtual then chat('{3EDC81}', (nickAtual or '?') .. ' - RG ' .. rgAtual) else chat('{FFFF00}', 'Nenhum RG atual identificado.') end
-        elseif listboxId == 8 then
+        elseif listboxId == 5 then
             sampSendChat('/tvoff')
-            painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
+            painelTvFlutuante, rgAtual, nickAtual, novatoTelagemPendenteId = false, nil, nil, nil
+        end
+        if listboxId >= 0 and listboxId <= 4 then
+            lua_thread.create(function()
+                wait(250)
+                abrirTV()
+            end)
         end
     elseif dialogId == D_PUNICOES then
         local tiposTabela = {'cadeia', 'ban_permanente', 'ban_temporario', 'mute', 'kick'}
