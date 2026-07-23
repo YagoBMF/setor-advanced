@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.37'
+local VERSION = '3.38'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -798,7 +798,7 @@ local function instalarPainelTvMimgui()
                     suportePosCarregada = true
                 end
                 if type(mimgui.SetNextWindowSize) == 'function' then
-                    mimgui.SetNextWindowSize(mimgui.ImVec2(315, 175),
+                    mimgui.SetNextWindowSize(mimgui.ImVec2(315, 150),
                         mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
                 end
 
@@ -807,11 +807,6 @@ local function instalarPainelTvMimgui()
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
                 mimgui.Text('JOGADOR: ' .. tostring(atendimentoNick ~= '' and atendimentoNick or '?'))
                 mimgui.Text('RG: ' .. tostring(atendimentoRg ~= '' and atendimentoRg or '?'))
-                local duracao = emAtendimento
-                    and math.max(0, relogioAtendimento()
-                        - (tonumber(atendimentoInicio) or relogioAtendimento()))
-                    or math.max(0, tonumber(atendimentoTempoFinal) or 0)
-                mimgui.Text(string.format('TEMPO: %02d:%02d', math.floor(duracao / 60), duracao % 60))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
                 if emAtendimento then
                     if mimgui.Button('FINALIZAR /FA', mimgui.ImVec2(285, 38)) then
@@ -1944,9 +1939,22 @@ function samp.onServerMessage(color, text)
             ct:match('[Aa]tendendo.-jogador.-([%w_]+)%s*%[(%d+)%]')
     end
     if nomeAtendimento and rgAtendimento and staffLogada and moduloAtivo('atendimento') then
+        local atendimentoNovo = not emAtendimento
+            or tostring(atendimentoRg) ~= tostring(rgAtendimento)
+            or tostring(atendimentoNick):lower() ~= tostring(nomeAtendimento):lower()
         atendimentoNick, atendimentoRg = nomeAtendimento, rgAtendimento
         atendimentoInicio, emAtendimento = relogioAtendimento(), true
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
+        -- A confirmacao do servidor garante que o jogador esta ON e que o
+        -- painel de atendimento acabou de ser aberto. Envia uma unica saudacao.
+        if atendimentoNovo then
+            lua_thread.create(function()
+                wait(150)
+                if emAtendimento and tostring(atendimentoRg) == tostring(rgAtendimento) then
+                    sampSendChat('Ola, como posso ajudar?')
+                end
+            end)
+        end
     end
     if emAtendimento and (baixo:find('atendimento finalizado', 1, true)
         or baixo:find('finalizou o atendimento', 1, true)) then
