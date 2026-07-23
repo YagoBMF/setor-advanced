@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.17'
+local VERSION = '3.20'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -112,8 +112,10 @@ local PUNICOES_CADEIA = {
     {'ASM - Agressao sem motivo', 'Agressao sem motivo', 100},
     {'NS - Sem amor a vida', 'Sem amor a vida', 200},
     {'DM - Matar sem motivo', 'Matar sem motivo', 200},
+    {'DM - Ferir sem motivo', 'Ferir sem motivo', 200},
     {'Assalto loja irregular', 'Assalto loja irregular', 150},
     {'Assalto banco irregular', 'Assalto banco irregular', 150},
+    {'Anti RP', 'Anti RP', 200},
     {'Anti-RP - Roubo de caixinha sobre veiculo', 'Roubo de caixinha sobre veiculo', 200},
     {'Anti-RP - Uso indevido de profissao', 'Uso indevido de profissao', 200},
     {'PTR solo - Policial solo em acao', 'Policial solo em acao', 250},
@@ -130,7 +132,7 @@ local PUNICOES_CADEIA = {
     {'RK - Vinganca apos morte', 'Vinganca apos morte', 250},
     {'Spam Kill - Abusando de interior', 'Abusando de interior', 250},
     {'Correndo safe - Abusando de safe', 'Abusando de safe em abordagem ou acao', 250},
-    {'Combat Log - Desconectou em acao', 'Desconectou em acao', 250},
+    {'CL - Desconectou em acao', 'Desconectou em acao', 300},
     {'Corrupcao', 'Corrupcao', 300},
     {'Dark RP', 'Dark RP', 300}
 }
@@ -165,6 +167,10 @@ _G.HZMobileTabelasPunicao = {
         {'Desrespeito | 3 dias', 'Desrespeito', 3},
         {'Conteudo sexual | 3 dias', 'Conteudo sexual', 3},
         {'Flood | 1 dia', 'Flood', 1}
+    },
+    kick = {
+        {'RT / Bugado', 'RT / Bugado', 0},
+        {'Bugando evento', 'Bugando evento', 0}
     }
 }
 _G.HZMobileTipoTabelaPunicao = 'cadeia'
@@ -562,7 +568,7 @@ local function instalarPainelTvMimgui()
                     painelTvMimguiPosCarregada = true
                 end
                 if type(mimgui.SetNextWindowSize) == 'function' then
-                    mimgui.SetNextWindowSize(mimgui.ImVec2(345, 148),
+                    mimgui.SetNextWindowSize(mimgui.ImVec2(345, 190),
                         mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
                 end
 
@@ -572,6 +578,9 @@ local function instalarPainelTvMimgui()
                 mimgui.Text('ID: ' .. tostring(idAtual)
                     .. '  |  RG: ' .. tostring(rgAtual or 'aguardando')
                     .. '  |  LEVEL: ' .. tostring(levelAtual))
+                local monitorInfo = rgAtual and monitorados[tostring(rgAtual)] or nil
+                mimgui.Text(monitorInfo and ('MONITORADO: ' .. tostring(monitorInfo.motivo))
+                    or 'MONITORAMENTO: nao monitorado')
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
 
                 if mimgui.Button('MENU', mimgui.ImVec2(72, 34)) then painelTvAcaoPendente = 'menu' end
@@ -581,6 +590,9 @@ local function instalarPainelTvMimgui()
                 if mimgui.Button('ACOES', mimgui.ImVec2(78, 34)) then painelTvAcaoPendente = 'acoes' end
                 mimgui.SameLine()
                 if mimgui.Button('TV OFF', mimgui.ImVec2(82, 34)) then painelTvAcaoPendente = 'off' end
+                if mimgui.Button('MONITORAMENTO', mimgui.ImVec2(330, 32)) then
+                    painelTvAcaoPendente = 'monitor'
+                end
 
                 if type(mimgui.GetWindowPos) == 'function' then
                     local pos = mimgui.GetWindowPos()
@@ -714,7 +726,7 @@ end
 local function abrirPunicoes()
     if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     dialogo(D_PUNICOES, 'SETOR - PUNICOES',
-        'Tabela de cadeia\nTabela de ban permanente\nTabela de ban temporario\nTabela de mute',
+        'Tabela de cadeia\nTabela de ban permanente\nTabela de ban temporario\nTabela de mute\nTabela de kick',
         'Continuar', 'Voltar', 2)
 end
 
@@ -733,7 +745,7 @@ local function abrirTabelaPunicoes(tipo)
     end
     local titulos = {
         cadeia='CADEIA', ban_permanente='BAN PERMANENTE',
-        ban_temporario='BAN TEMPORARIO', mute='MUTE'
+        ban_temporario='BAN TEMPORARIO', mute='MUTE', kick='KICK'
     }
     dialogo(D_TABELA_PUNICAO, 'SETOR - TABELA ' .. (titulos[tipo] or 'PUNICAO'),
         table.concat(linhas, '\n'), 'Selecionar', 'Voltar', 2)
@@ -761,13 +773,15 @@ local function confirmarPunicaoTabela(rg)
     local tipoTabela = _G.HZMobileTipoTabelaPunicao or 'cadeia'
     if tipoTabela ~= 'cadeia' then
         local nomes = {
-            ban_permanente='BAN PERMANENTE', ban_temporario='BAN TEMPORARIO', mute='MUTE'
+            ban_permanente='BAN PERMANENTE', ban_temporario='BAN TEMPORARIO',
+            mute='MUTE', kick='KICK'
         }
         dialogAction = {
             tipo='tabela_' .. tipoTabela, rg=rg,
             nick=nickAtual, motivo=item[2], tempo=tonumber(item[3]) or 0
         }
-        local tempoTexto = tipoTabela == 'ban_permanente' and 'Permanente'
+        local tempoTexto = (tipoTabela == 'ban_permanente' and 'Permanente')
+            or (tipoTabela == 'kick' and 'Imediato')
             or (tostring(item[3]) .. ' dia(s)')
         dialogo(D_CONFIRMAR_TABELA, 'CONFIRMAR ' .. (nomes[tipoTabela] or 'PUNICAO'),
             'Jogador: ' .. tostring(nickAtual or '?') .. '\nRG: ' .. rg
@@ -802,10 +816,45 @@ end
 
 local function abrirMonitor()
     if not moduloAtivo('monitoramento') then return chat('{FF5555}', 'Monitoramento desativado ou bloqueado para o cargo.') end
+    local status = rgAtual and monitorados[tostring(rgAtual)] or nil
     dialogo(D_MONITOR, 'SETOR - MONITORAMENTO',
-        'Adicionar monitorado\nRemover monitorado\nListar monitorados',
+        'Monitorar jogador atual' .. (status and ' [JA MONITORADO]' or '')
+            .. '\nRemover jogador atual do monitoramento\nLista de monitorados',
         'Abrir', 'Voltar', 2)
 end
+
+local function abrirListaMonitorados()
+    _G.HZMobileMonitorLista = {}
+    local linhas = {}
+    for rg, info in pairs(monitorados) do
+        local jogadorOnline = nil
+        for id = 0, sampGetMaxPlayerId(false) do
+            if sampIsPlayerConnected(id)
+                and tostring(sampGetPlayerNickname(id) or ''):lower() == tostring(info.nick or ''):lower() then
+                jogadorOnline = {id=id, nick=sampGetPlayerNickname(id), level=sampGetPlayerScore(id) or 0}
+                break
+            end
+        end
+        _G.HZMobileMonitorLista[#_G.HZMobileMonitorLista + 1] = {
+            rg=tostring(rg), info=info, jogador=jogadorOnline
+        }
+    end
+    table.sort(_G.HZMobileMonitorLista, function(a, b)
+        if (a.jogador ~= nil) ~= (b.jogador ~= nil) then return a.jogador ~= nil end
+        return tostring(a.info.nick) < tostring(b.info.nick)
+    end)
+    for i, item in ipairs(_G.HZMobileMonitorLista) do
+        linhas[i] = string.format('%s | RG %s | %s | %s',
+            tostring(item.info.nick), item.rg, item.jogador and 'ONLINE' or 'OFFLINE',
+            tostring(item.info.motivo))
+    end
+    if #linhas == 0 then
+        return chat('{FFFF00}', 'Lista de monitorados vazia.')
+    end
+    dialogo(28022, 'SETOR - JOGADORES MONITORADOS', table.concat(linhas, '\n'),
+        'Telar', 'Voltar', 2)
+end
+_G.HZMobileAbrirListaMonitorados = abrirListaMonitorados
 
 local function abrirModulos(categoriaNome)
     if not exigirStaff('/mods') then return end
@@ -895,7 +944,7 @@ local function executarAcaoNoTelado(acao)
     local mapa = {
         ir={'ir','IR'}, trazer={'trazer','TRAZER'}, reviver={'reviver','REVIVER'},
         congelar={'congelar','CONGELAR'}, descongelar={'descongelar','DESCONGELAR'},
-        armas={'prenderarmas','PRENDERARMAS'}
+        armas={'prenderarmas','PRENDERARMAS'}, checar={'checar','CHECAR'}
     }
     local dados = mapa[acao]
     if not dados then return end
@@ -1150,7 +1199,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         return
     end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > D_MOD_CATEGORIA then return end
+    if dialogId < D_MAIN or dialogId > 28022 then return end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
@@ -1177,13 +1226,20 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             lua_thread.create(function() wait(150) abrirTV() end)
             return false
         end
+        if dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
+            lua_thread.create(function() wait(150) abrirMonitor() end)
+            return false
+        end
+        if dialogId == 28022 then
+            lua_thread.create(function() wait(150) abrirMonitor() end)
+            return false
+        end
         if dialogId == D_MOD_CATEGORIA then
             lua_thread.create(function() wait(150) abrirModulos() end)
             return false
         end
         if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or
-           dialogId == D_INPUT_RG_BUSCA or dialogId == D_INPUT_RG_DEL or
-           dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
+           dialogId == D_INPUT_RG_BUSCA or dialogId == D_INPUT_RG_DEL then
             abrirPrincipal()
         elseif dialogId == D_TV or dialogId == D_ACOES or
                dialogId == D_RG or dialogId == D_MONITOR or dialogId == D_SELETOR_TV then
@@ -1241,7 +1297,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
         end
     elseif dialogId == D_PUNICOES then
-        local tiposTabela = {'cadeia', 'ban_permanente', 'ban_temporario', 'mute'}
+        local tiposTabela = {'cadeia', 'ban_permanente', 'ban_temporario', 'mute', 'kick'}
         local tipoTabela = tiposTabela[listboxId + 1]
         if tipoTabela then abrirTabelaPunicoes(tipoTabela) end
     elseif dialogId == D_TABELA_PUNICAO then
@@ -1268,6 +1324,8 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
                 sampSendChat('/bantemp ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
             elseif dialogAction.tipo == 'tabela_mute' then
                 sampSendChat('/mute ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+            elseif dialogAction.tipo == 'tabela_kick' then
+                sampSendChat('/kick ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
             end
             dialogAction, punicaoTabelaSelecionada = nil, nil
         end
@@ -1299,16 +1357,32 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if cache[rg] then cache[rg] = nil salvarTabela(CACHE_FILE, cache) chat('{3EDC81}', 'RG ' .. rg .. ' removido.') else chat('{FF5555}', 'RG inexistente.') end
     elseif dialogId == D_MONITOR then
         if listboxId == 0 then
-            dialogo(D_INPUT_MONITOR, 'ADICIONAR MONITORADO',
-                rgAtual and ('Alvo: ' .. tostring(nickAtual or '?') .. ' | RG ' .. rgAtual .. '\nDigite somente o motivo')
-                    or 'Digite: RG-ou-nome motivo',
-                'Adicionar', 'Cancelar', 1)
-        elseif listboxId == 1 then dialogo(D_INPUT_DESMONITOR, 'REMOVER MONITORADO', 'Digite o RG ou nome:', 'Remover', 'Cancelar', 1)
-        elseif listboxId == 2 then
-            local n = 0
-            for rg, info in pairs(monitorados) do n = n + 1 chat('{48C6FF}', info.nick .. ' [RG ' .. rg .. '] - ' .. info.motivo) end
-            if n == 0 then chat('{FFFF00}', 'Lista de monitorados vazia.') end
+            if not rgAtual then return chat('{FFFF00}', 'Aguarde o RG do jogador telado aparecer.') end
+            dialogo(D_INPUT_MONITOR, 'MONITORAR JOGADOR',
+                'Alvo: ' .. tostring(nickAtual or '?') .. ' | RG ' .. rgAtual .. '\nDigite somente o motivo',
+                monitorados[tostring(rgAtual)] and 'Atualizar' or 'Adicionar', 'Cancelar', 1)
+        elseif listboxId == 1 then
+            local rg = rgAtual and tostring(rgAtual) or nil
+            if not rg then
+                chat('{FFFF00}', 'Aguarde o RG do jogador telado aparecer.')
+            elseif monitorados[rg] then
+                monitorados[rg] = nil
+                salvarTabela(MONITOR_FILE, monitorados)
+                chat('{3EDC81}', tostring(nickAtual or rg) .. ' removido do monitoramento.')
+            else
+                chat('{FFFF00}', 'O jogador atual nao esta monitorado.')
+            end
             lua_thread.create(function() wait(150) abrirMonitor() end)
+        elseif listboxId == 2 then _G.HZMobileAbrirListaMonitorados() end
+    elseif dialogId == 28022 then
+        local item = (_G.HZMobileMonitorLista or {})[(tonumber(listboxId) or -1) + 1]
+        if item then
+            if item.jogador then
+                _G.HZMobileTelarPelaTab(item.jogador)
+            else
+                chat('{FFFF00}', tostring(item.info.nick) .. ' esta offline.')
+                lua_thread.create(function() wait(150) _G.HZMobileAbrirListaMonitorados() end)
+            end
         end
     elseif dialogId == D_INPUT_MONITOR then
         local rg, nick, motivo
@@ -1490,6 +1564,8 @@ function main()
                 abrirPunicoes()
             elseif acao == 'acoes' then
                 abrirAcoes()
+            elseif acao == 'monitor' then
+                abrirMonitor()
             elseif acao == 'off' then
                 sampSendChat('/tvoff')
                 painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
