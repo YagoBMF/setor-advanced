@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.22'
+local VERSION = '3.24'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -40,10 +40,13 @@ local WEBHOOKS = {
 
 local cfg = inicfg.load({
     dados = { nome = 'Vazio', cargo = 'Vazio' },
-    interface = { painel_tv_x = 18, painel_tv_y = 250, painel_tv_visivel = true },
+    interface = {
+        painel_tv_x = 18, painel_tv_y = 250, painel_tv_visivel = true,
+        atendimento_x = 18, atendimento_y = 170
+    },
     modulos = {
         painel_tv = true, navegacao_tv = true,
-        monitoramento = true, acoes_staff = true, logs = true
+        monitoramento = true, acoes_staff = true, atendimento = true, logs = true
     }
 }, CONFIG_FILE)
 
@@ -53,10 +56,13 @@ cfg.interface = cfg.interface or {}
 if cfg.interface.painel_tv_x == nil then cfg.interface.painel_tv_x = 18 end
 if cfg.interface.painel_tv_y == nil then cfg.interface.painel_tv_y = 250 end
 if cfg.interface.painel_tv_visivel == nil then cfg.interface.painel_tv_visivel = true end
+if cfg.interface.atendimento_x == nil then cfg.interface.atendimento_x = 18 end
+if cfg.interface.atendimento_y == nil then cfg.interface.atendimento_y = 170 end
 if cfg.modulos.navegacao_tv == nil then cfg.modulos.navegacao_tv = cfg.modulos.navegacao ~= false end
 if cfg.modulos.acoes_staff == nil then cfg.modulos.acoes_staff = cfg.modulos.atalhos ~= false end
 if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
 if cfg.modulos.monitoramento == nil then cfg.modulos.monitoramento = true end
+if cfg.modulos.atendimento == nil then cfg.modulos.atendimento = true end
 -- Logs sao obrigatorios para toda a staff e nao podem ser desativados.
 cfg.modulos.logs = true
 inicfg.save(cfg, CONFIG_FILE)
@@ -78,6 +84,7 @@ local painelTvToqueAnterior, painelTvAcaoPendente = false, nil
 local painelTvMimguiPosCarregada, painelTvMimguiUltimoSave = false, 0
 local monitorSsAberto = false
 local novatoTelagemPendenteId = nil
+local atendimentoPosCarregada, atendimentoUltimoSave = false, 0
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -217,6 +224,7 @@ local function nivelCargo(cargo)
 end
 
 local MODULOS_INFO = {
+    atendimento = {'ATENDIMENTO RAPIDO', 'Botoes flutuantes de fila e reports.', 1},
     painel_tv = {'PAINEL TV', 'Telagem, status e menu TV.', 2},
     navegacao_tv = {'NAVEGACAO TV', 'Selecao e atalhos entre jogadores.', 2},
     monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
@@ -224,7 +232,7 @@ local MODULOS_INFO = {
 }
 
 local MODULOS_CATEGORIAS = {
-    {'PAINEIS', 'Painel TV, telagem e punicoes.', {'painel_tv'}},
+    {'PAINEIS', 'Atendimento rapido, Painel TV e punicoes.', {'atendimento', 'painel_tv'}},
     {'NAVEGACAO', 'Selecao e navegacao de jogadores.', {'navegacao_tv'}},
     {'FERRAMENTAS', 'Monitoramento e acoes administrativas.', {'monitoramento', 'acoes_staff'}}
 }
@@ -643,6 +651,63 @@ local function instalarPainelTvMimgui()
 
         mimgui.OnFrame(
             function()
+                return staffLogada and moduloAtivo('atendimento')
+            end,
+            function()
+                local flags = 0
+                if mimgui.WindowFlags then
+                    flags = (mimgui.WindowFlags.NoCollapse or 0)
+                        + (mimgui.WindowFlags.NoResize or 0)
+                        + (mimgui.WindowFlags.NoScrollbar or 0)
+                end
+                if not atendimentoPosCarregada and type(mimgui.SetNextWindowPos) == 'function' then
+                    mimgui.SetNextWindowPos(
+                        mimgui.ImVec2(tonumber(cfg.interface.atendimento_x) or 18,
+                            tonumber(cfg.interface.atendimento_y) or 170),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0
+                    )
+                    atendimentoPosCarregada = true
+                end
+                if type(mimgui.SetNextWindowSize) == 'function' then
+                    mimgui.SetNextWindowSize(mimgui.ImVec2(265, 92),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+                end
+
+                mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento', nil, flags)
+                local nivel = nivelCargo(cfg.dados.cargo)
+                if nivel >= 2 then
+                    if mimgui.Button('/REPORTS', mimgui.ImVec2(112, 38)) then
+                        sampSendChat('/reports')
+                    end
+                    mimgui.SameLine()
+                    if mimgui.Button('/FILA', mimgui.ImVec2(112, 38)) then
+                        sampSendChat('/fila')
+                    end
+                else
+                    if mimgui.Button('/FILA', mimgui.ImVec2(235, 38)) then
+                        sampSendChat('/fila')
+                    end
+                end
+
+                if type(mimgui.GetWindowPos) == 'function' then
+                    local pos = mimgui.GetWindowPos()
+                    local px, py = math.floor(pos.x or 0), math.floor(pos.y or 0)
+                    if px ~= tonumber(cfg.interface.atendimento_x)
+                        or py ~= tonumber(cfg.interface.atendimento_y) then
+                        cfg.interface.atendimento_x, cfg.interface.atendimento_y = px, py
+                        local agora = os.clock and os.clock() or 0
+                        if agora - atendimentoUltimoSave >= 1 then
+                            atendimentoUltimoSave = agora
+                            inicfg.save(cfg, CONFIG_FILE)
+                        end
+                    end
+                end
+                mimgui.End()
+            end
+        )
+
+        mimgui.OnFrame(
+            function()
                 return monitorSsAberto and staffLogada and moduloAtivo('monitoramento')
             end,
             function()
@@ -725,7 +790,7 @@ local function mostrarAjuda()
     chat('{48C6FF}', '/tvn /tvnvoltar (novatos) | /tva /tavoltar (todos) | /tvoff')
     chat('{48C6FF}', '/setorir RG | /setortrazer RG | /setorvida RG valor | /setorcolete RG valor')
     chat('{48C6FF}', '/setorreviver RG | /setorcongelar RG | /setordescongelar RG | /setorarmas RG')
-    chat('{48C6FF}', '/mods | /modulo painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
+    chat('{48C6FF}', '/mods | /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
 end
 
 local function dialogo(id, titulo, texto, botao1, botao2, estilo)
@@ -819,8 +884,28 @@ local function capturarHorarioServidor(texto)
 end
 
 local function abrirPrincipal()
+    local itens = {}
+    local linhas = {}
+    local function adicionar(id, titulo, modulo)
+        if not modulo or moduloPermitido(modulo) then
+            itens[#itens + 1] = id
+            linhas[#linhas + 1] = titulo
+        end
+    end
+    adicionar('punicoes', 'Punicoes do jogador', 'painel_tv')
+    adicionar('acoes', 'Acoes administrativas', 'acoes_staff')
+    adicionar('monitoramento', 'Monitoramento', 'monitoramento')
+    adicionar('auto_telagem', 'Auto Telagem', 'navegacao_tv')
+    adicionar('cache', 'Cache de RG')
+    local temModuloConfiguravel = false
+    for id in pairs(MODULOS_INFO) do
+        if moduloPermitido(id) then temModuloConfiguravel = true break end
+    end
+    if temModuloConfiguravel then adicionar('modulos', 'Modulos') end
+    adicionar('ajuda', 'Ajuda no chat')
+    _G.HZMobileMenuPrincipalItens = itens
     dialogo(D_MAIN, 'SETOR SEGURANCA - MOBILE',
-        'Punicoes do jogador\nAcoes administrativas\nMonitoramento\nAuto Telagem\nCache de RG\nModulos\nAjuda no chat',
+        table.concat(linhas, '\n'),
         'Abrir', 'Fechar', 2)
 end
 
@@ -969,11 +1054,22 @@ local function abrirModulos(categoriaNome)
     local linhas = {}
     modsCategoriaAtual = categoriaNome
     if not categoriaNome then
+        _G.HZMobileModsCategoriasVisiveis = {}
         for _, categoria in ipairs(MODULOS_CATEGORIAS) do
-            local ativos = 0
-            for _, id in ipairs(categoria[3]) do if moduloAtivo(id) then ativos = ativos + 1 end end
-            linhas[#linhas + 1] = string.format('{48C6FF}%s {A8B5C8}[%d/%d ativos] - %s', categoria[1], ativos, #categoria[3], categoria[2])
+            local ativos, permitidos = 0, 0
+            for _, id in ipairs(categoria[3]) do
+                if moduloPermitido(id) then
+                    permitidos = permitidos + 1
+                    if moduloAtivo(id) then ativos = ativos + 1 end
+                end
+            end
+            if permitidos > 0 then
+                _G.HZMobileModsCategoriasVisiveis[#_G.HZMobileModsCategoriasVisiveis + 1] = categoria
+                linhas[#linhas + 1] = string.format('{48C6FF}%s {A8B5C8}[%d/%d ativos] - %s',
+                    categoria[1], ativos, permitidos, categoria[2])
+            end
         end
+        if #linhas == 0 then linhas[1] = '{A8B5C8}Nenhum modulo configuravel para este cargo.' end
         dialogoMods(D_MODULOS,
             'SETOR ADVANCED | CATEGORIAS | ' .. tostring(cfg.dados.nome) .. ' - ' .. tostring(cfg.dados.cargo),
             table.concat(linhas, '\n'), 'ABRIR', 'FECHAR')
@@ -983,13 +1079,17 @@ local function abrirModulos(categoriaNome)
     for _, categoria in ipairs(MODULOS_CATEGORIAS) do
         if categoria[1] == categoriaNome then ids = categoria[3] break end
     end
+    _G.HZMobileModsIdsVisiveis = {}
     for _, id in ipairs(ids) do
-        local info = MODULOS_INFO[id]
-        local estado, cor
-        if not moduloPermitido(id) then estado, cor = 'BLOQUEADO', '{FF6B6B}'
-        elseif cfg.modulos[id] ~= false then estado, cor = 'ATIVO', '{3EDC81}'
-        else estado, cor = 'DESATIVADO', '{FFB347}' end
-        linhas[#linhas + 1] = string.format('{FFFFFF}%s  %s[%s]{A8B5C8} - %s', info[1], cor, estado, info[2])
+        if moduloPermitido(id) then
+            _G.HZMobileModsIdsVisiveis[#_G.HZMobileModsIdsVisiveis + 1] = id
+            local info = MODULOS_INFO[id]
+            local estado, cor
+            if cfg.modulos[id] ~= false then estado, cor = 'ATIVO', '{3EDC81}'
+            else estado, cor = 'DESATIVADO', '{FFB347}' end
+            linhas[#linhas + 1] = string.format('{FFFFFF}%s  %s[%s]{A8B5C8} - %s',
+                info[1], cor, estado, info[2])
+        end
     end
     dialogoMods(D_MOD_CATEGORIA,
         'SETOR ADVANCED | ' .. categoriaNome .. ' | ' .. tostring(cfg.dados.nome) .. ' - ' .. tostring(cfg.dados.cargo),
@@ -1172,7 +1272,7 @@ local function registrarComandos()
         if nome == 'atalhos' then nome = 'acoes_staff' end
         if nome == 'logs' then return chat('{FF5555}', 'Logs sao obrigatorios e permanecem sempre ativos.') end
         if not nome or not MODULOS_INFO[nome] then
-            return chat('{FFFF00}', 'Use /modulo painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
+            return chat('{FFFF00}', 'Use /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
         end
         if not moduloPermitido(nome) then return chat('{FF5555}', 'Modulo bloqueado para o seu cargo.') end
         cfg.modulos[nome] = estado == 'on'
@@ -1371,17 +1471,13 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     end
 
     if dialogId == D_MODULOS then
-        local categoria = MODULOS_CATEGORIAS[(tonumber(listboxId) or -1) + 1]
+        local categoria = (_G.HZMobileModsCategoriasVisiveis or {})[(tonumber(listboxId) or -1) + 1]
         if categoria then
             local nomeCategoria = categoria[1]
             lua_thread.create(function() wait(150) abrirModulos(nomeCategoria) end)
         end
     elseif dialogId == D_MOD_CATEGORIA then
-        local ids = {}
-        for _, categoria in ipairs(MODULOS_CATEGORIAS) do
-            if categoria[1] == modsCategoriaAtual then ids = categoria[3] break end
-        end
-        local id = ids[(tonumber(listboxId) or -1) + 1]
+        local id = (_G.HZMobileModsIdsVisiveis or {})[(tonumber(listboxId) or -1) + 1]
         if id then
             if not moduloPermitido(id) then
                 chat('{FF5555}', 'Funcao bloqueada para o cargo ' .. tostring(cfg.dados.cargo) .. '.')
@@ -1397,13 +1493,14 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             _G.HZMobileTelarPelaTab(jogador)
         end
     elseif dialogId == D_MAIN then
-        if listboxId == 0 then abrirPunicoes()
-        elseif listboxId == 1 then abrirAcoes()
-        elseif listboxId == 2 then abrirMonitor()
-        elseif listboxId == 3 then abrirTV()
-        elseif listboxId == 4 then abrirRG()
-        elseif listboxId == 5 then abrirModulos()
-        elseif listboxId == 6 then mostrarAjuda() abrirPrincipal() end
+        local itemMenu = (_G.HZMobileMenuPrincipalItens or {})[(tonumber(listboxId) or -1) + 1]
+        if itemMenu == 'punicoes' then abrirPunicoes()
+        elseif itemMenu == 'acoes' then abrirAcoes()
+        elseif itemMenu == 'monitoramento' then abrirMonitor()
+        elseif itemMenu == 'auto_telagem' then abrirTV()
+        elseif itemMenu == 'cache' then abrirRG()
+        elseif itemMenu == 'modulos' then abrirModulos()
+        elseif itemMenu == 'ajuda' then mostrarAjuda() abrirPrincipal() end
     elseif dialogId == D_TV then
         if listboxId == 0 then navegar(true, -1)
         elseif listboxId == 1 then navegar(true, 1)
@@ -1684,7 +1781,7 @@ function main()
             local acao = painelTvAcaoPendente
             painelTvAcaoPendente = nil
             if acao == 'menu' then
-                abrirTV()
+                abrirPrincipal()
             elseif acao == 'punir' then
                 abrirPunicoes()
             elseif acao == 'acoes' then
