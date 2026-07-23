@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.12'
+local VERSION = '3.13'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -638,6 +638,15 @@ end
 local function capturarHorarioServidor(texto)
     texto = clean(texto):gsub('_', ' '):gsub('%s+', ' ')
     local baixo = texto:lower()
+    -- Durante a telagem pela TAB, o RG chega pelos textdraws do servidor.
+    -- Vincula esse RG ao nick online selecionado para todas as acoes do painel.
+    if painelTvFlutuante and nickAtual and nickAtual ~= '' then
+        local rgTv = texto:match('[Rr][Gg][:%s]+(%d+)')
+        if rgTv then
+            rgAtual = rgTv
+            salvarRG(rgTv, nickAtual)
+        end
+    end
     local temMes = baixo:match('jan') or baixo:match('fev') or baixo:match('mar') or baixo:match('abr')
         or baixo:match('mai') or baixo:match('jun') or baixo:match('jul') or baixo:match('ago')
         or baixo:match('set') or baixo:match('out') or baixo:match('nov') or baixo:match('dez')
@@ -766,8 +775,15 @@ local function abrirModulos(categoriaNome)
 end
 
 local function pedirAcao(acao, instrucao)
-    dialogAction = acao
-    dialogo(D_INPUT_ACAO, 'SETOR - INFORME O ALVO', instrucao or 'Digite o RG ou nome salvo no cache:', 'Executar', 'Cancelar', 1)
+    if rgAtual and rgAtual:match('^%d+$') then
+        dialogAction = {tipo='acao_atual', acao=acao, rg=rgAtual}
+        dialogo(D_INPUT_ACAO, 'SETOR - ' .. tostring(nickAtual or 'JOGADOR'),
+            instrucao or ('Alvo: ' .. tostring(nickAtual or '?') .. ' | RG ' .. rgAtual),
+            'Executar', 'Cancelar', 1)
+    else
+        dialogAction = acao
+        dialogo(D_INPUT_ACAO, 'SETOR - INFORME O ALVO', instrucao or 'Digite o RG ou nome salvo no cache:', 'Executar', 'Cancelar', 1)
+    end
 end
 
 local function executarAcaoDialogo(valor)
@@ -776,6 +792,14 @@ local function executarAcaoDialogo(valor)
     local acao = dialogAction
     dialogAction = nil
     if not acao then return end
+    if type(acao) == 'table' and acao.tipo == 'acao_atual' then
+        local quantidade = trim(valor):match('^(%d+)$')
+        if not quantidade then return chat('{FFFF00}', 'Digite somente o valor. Exemplo: 100') end
+        local comando = acao.acao == 'vida' and 'setvida' or 'setcolete'
+        sampSendChat('/' .. comando .. ' ' .. acao.rg .. ' ' .. quantidade)
+        logAcao(comando:upper(), acao.rg, quantidade)
+        return
+    end
     if acao == 'vida' or acao == 'colete' then
         local alvo, quantidade = trim(valor):match('^(%S+)%s+(%d+)$')
         local rg = alvo and (acharRG(alvo) or alvo)
@@ -797,13 +821,35 @@ local function executarAcaoDialogo(valor)
     logAcao(dados[2], rg)
 end
 
+local function executarAcaoNoTelado(acao)
+    if not exigirStaff('as acoes administrativas') then return end
+    if not moduloAtivo('acoes_staff') then return chat('{FF5555}', 'Acoes Staff desativadas ou bloqueadas para o cargo.') end
+    if not rgAtual or not tostring(rgAtual):match('^%d+$') then
+        return chat('{FFFF00}', 'Aguarde o RG do jogador aparecer no Painel TV.')
+    end
+    local mapa = {
+        ir={'ir','IR'}, trazer={'trazer','TRAZER'}, reviver={'reviver','REVIVER'},
+        congelar={'congelar','CONGELAR'}, descongelar={'descongelar','DESCONGELAR'},
+        armas={'prenderarmas','PRENDERARMAS'}
+    }
+    local dados = mapa[acao]
+    if not dados then return end
+    sampSendChat('/' .. dados[1] .. ' ' .. rgAtual)
+    logAcao(dados[2], rgAtual)
+end
+_G.HZMobileExecutarAcaoNoTelado = executarAcaoNoTelado
+
 local function pedirPunicao(tipo)
-    dialogAction = tipo
-    local instrucoes = {
-        ban='Formato: RG motivo',
-        bantemp='Formato: RG dias motivo',
-        cadeia='Formato: RG minutos motivo',
-        mute='Formato: Nick RG dias motivo'
+    local alvoAtual = rgAtual and tostring(rgAtual):match('^%d+$')
+    dialogAction = alvoAtual and {tipo=tipo, rg=rgAtual, nick=nickAtual} or tipo
+    local instrucoes = alvoAtual and {
+        ban='Digite somente o motivo',
+        bantemp='Formato: dias motivo',
+        cadeia='Formato: minutos motivo',
+        mute='Formato: dias motivo'
+    } or {
+        ban='Formato: RG motivo', bantemp='Formato: RG dias motivo',
+        cadeia='Formato: RG minutos motivo', mute='Formato: Nick RG dias motivo'
     }
     dialogo(D_INPUT_PUNICAO, 'SETOR - PUNICAO', instrucoes[tipo], 'Enviar', 'Cancelar', 1)
 end
@@ -814,6 +860,27 @@ local function executarPunicaoDialogo(valor)
     local tipo = dialogAction
     dialogAction = nil
     valor = trim(valor)
+    if type(tipo) == 'table' then
+        local dados = tipo
+        tipo = dados.tipo
+        if tipo == 'ban' then
+            if valor == '' then return chat('{FFFF00}', 'Digite o motivo.') end
+            sampSendChat('/ban ' .. dados.rg .. ' ' .. valor)
+        elseif tipo == 'bantemp' then
+            local dias, motivo = valor:match('^(%d+)%s+(.+)$')
+            if not dias then return chat('{FFFF00}', 'Formato: dias motivo') end
+            sampSendChat('/bantemp ' .. dados.rg .. ' ' .. dias .. ' ' .. motivo)
+        elseif tipo == 'cadeia' then
+            local minutos, motivo = valor:match('^(%d+)%s+(.+)$')
+            if not minutos then return chat('{FFFF00}', 'Formato: minutos motivo') end
+            sampSendChat('/punicao ' .. dados.rg .. ' ' .. minutos .. ' ' .. motivo)
+        elseif tipo == 'mute' then
+            local dias, motivo = valor:match('^(%d+)%s+(.+)$')
+            if not dias then return chat('{FFFF00}', 'Formato: dias motivo') end
+            logPunicao(tostring(dados.nick or '?'), dados.rg, dias .. ' dias', motivo, 'mutou', WEBHOOKS.MUTE, 'MUTE')
+        end
+        return
+    end
     if tipo == 'ban' then
         local rg, motivo = valor:match('^(%d+)%s+(.+)$')
         if not rg then return chat('{FFFF00}', 'Formato: RG motivo') end
@@ -1087,7 +1154,11 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     elseif dialogId == D_TABELA_PUNICAO then
         punicaoTabelaSelecionada = PUNICOES_CADEIA[listboxId + 1]
         if punicaoTabelaSelecionada then
-            dialogo(D_INPUT_ALVO_TABELA, 'SETOR - ALVO DA PUNICAO', 'Digite o RG ou nome salvo no cache:', 'Continuar', 'Cancelar', 1)
+            if rgAtual and tostring(rgAtual):match('^%d+$') then
+                confirmarPunicaoTabela(rgAtual)
+            else
+                dialogo(D_INPUT_ALVO_TABELA, 'SETOR - ALVO DA PUNICAO', 'Digite o RG ou nome salvo no cache:', 'Continuar', 'Cancelar', 1)
+            end
         end
     elseif dialogId == D_INPUT_ALVO_TABELA then
         confirmarPunicaoTabela(input)
@@ -1104,8 +1175,8 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         local acoes = {'ir', 'trazer', 'reviver', 'congelar', 'descongelar', 'armas', 'vida', 'colete'}
         local acao = acoes[listboxId + 1]
         if acao == 'vida' or acao == 'colete' then
-            pedirAcao(acao, 'Digite: RG-ou-nome valor\nExemplo: 12345 100')
-        elseif acao then pedirAcao(acao) end
+            pedirAcao(acao, rgAtual and 'Digite somente o valor\nExemplo: 100' or 'Digite: RG-ou-nome valor\nExemplo: 12345 100')
+        elseif acao then _G.HZMobileExecutarAcaoNoTelado(acao) end
     elseif dialogId == D_INPUT_ACAO then
         executarAcaoDialogo(input)
     elseif dialogId == D_INPUT_PUNICAO then
@@ -1127,7 +1198,11 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         local rg = trim(input)
         if cache[rg] then cache[rg] = nil salvarTabela(CACHE_FILE, cache) chat('{3EDC81}', 'RG ' .. rg .. ' removido.') else chat('{FF5555}', 'RG inexistente.') end
     elseif dialogId == D_MONITOR then
-        if listboxId == 0 then dialogo(D_INPUT_MONITOR, 'ADICIONAR MONITORADO', 'Digite: RG-ou-nome motivo', 'Adicionar', 'Cancelar', 1)
+        if listboxId == 0 then
+            dialogo(D_INPUT_MONITOR, 'ADICIONAR MONITORADO',
+                rgAtual and ('Alvo: ' .. tostring(nickAtual or '?') .. ' | RG ' .. rgAtual .. '\nDigite somente o motivo')
+                    or 'Digite: RG-ou-nome motivo',
+                'Adicionar', 'Cancelar', 1)
         elseif listboxId == 1 then dialogo(D_INPUT_DESMONITOR, 'REMOVER MONITORADO', 'Digite o RG ou nome:', 'Remover', 'Cancelar', 1)
         elseif listboxId == 2 then
             local n = 0
@@ -1136,9 +1211,15 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             lua_thread.create(function() wait(150) abrirMonitor() end)
         end
     elseif dialogId == D_INPUT_MONITOR then
-        local alvo, motivo = trim(input):match('^(%S+)%s+(.+)$')
-        local rg, nick = alvo and acharRG(alvo)
-        if not rg and alvo and alvo:match('^%d+$') then rg, nick = alvo, 'Desconhecido' end
+        local rg, nick, motivo
+        if rgAtual and tostring(rgAtual):match('^%d+$') then
+            rg, nick, motivo = rgAtual, nickAtual or 'Desconhecido', trim(input)
+        else
+            local alvo
+            alvo, motivo = trim(input):match('^(%S+)%s+(.+)$')
+            rg, nick = alvo and acharRG(alvo)
+            if not rg and alvo and alvo:match('^%d+$') then rg, nick = alvo, 'Desconhecido' end
+        end
         if not rg then chat('{FF5555}', 'Jogador nao localizado no cache.')
         else monitorados[rg] = {nick=nick, motivo=motivo} salvarTabela(MONITOR_FILE, monitorados) chat('{3EDC81}', nick .. ' [RG ' .. rg .. '] adicionado.') end
     elseif dialogId == D_INPUT_DESMONITOR then
