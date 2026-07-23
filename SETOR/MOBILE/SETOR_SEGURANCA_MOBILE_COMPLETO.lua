@@ -397,6 +397,9 @@ local function telarJogadorPelaTab(jogador)
     chat('{48C6FF}', 'Telando ' .. nickAtual .. ' [ID ' .. tostring(jogador.id) .. '] pelo TAB.')
     return true
 end
+-- Ponte global evita estourar o limite de 60 upvalues do LuaJIT no callback
+-- central de dialogos, que ja concentra todas as janelas do mobile.
+_G.HZMobileTelarPelaTab = telarJogadorPelaTab
 
 local function navegar(novatos, direcao)
     if not exigirStaff('a navegacao TV') then return end
@@ -1053,7 +1056,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     elseif dialogId == D_SELETOR_TV then
         local jogador = jogadoresSeletorTV[(tonumber(listboxId) or -1) + 1]
         if jogador then
-            telarJogadorPelaTab(jogador)
+            _G.HZMobileTelarPelaTab(jogador)
         end
     elseif dialogId == D_MAIN then
         if listboxId == 0 then abrirTV()
