@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.16'
+local VERSION = '3.17'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1161,15 +1161,31 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if dialogId == D_TV then return false end
         if dialogId == D_SELETOR_TV then return false end
         if dialogId == D_MODULOS then return false end
+        if dialogId == D_TABELA_PUNICAO then
+            lua_thread.create(function() wait(150) abrirPunicoes() end)
+            return false
+        end
+        if dialogId == D_CONFIRMAR_TABELA or dialogId == D_INPUT_ALVO_TABELA then
+            dialogAction = nil
+            lua_thread.create(function()
+                wait(150)
+                abrirTabelaPunicoes(_G.HZMobileTipoTabelaPunicao or 'cadeia')
+            end)
+            return false
+        end
+        if dialogId == D_PUNICOES then
+            lua_thread.create(function() wait(150) abrirTV() end)
+            return false
+        end
         if dialogId == D_MOD_CATEGORIA then
             lua_thread.create(function() wait(150) abrirModulos() end)
             return false
         end
-        if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or dialogId == D_INPUT_ALVO_TABELA or dialogId == D_CONFIRMAR_TABELA or
+        if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or
            dialogId == D_INPUT_RG_BUSCA or dialogId == D_INPUT_RG_DEL or
            dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
             abrirPrincipal()
-        elseif dialogId == D_TV or dialogId == D_PUNICOES or dialogId == D_TABELA_PUNICAO or dialogId == D_ACOES or
+        elseif dialogId == D_TV or dialogId == D_ACOES or
                dialogId == D_RG or dialogId == D_MONITOR or dialogId == D_SELETOR_TV then
             abrirPrincipal()
         end
