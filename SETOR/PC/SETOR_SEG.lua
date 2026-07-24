@@ -108,7 +108,8 @@ _G.HZAvisosAC = _G.HZAvisosAC or {
     prazoLista = 0,
     dialogReportId = -1,
     ultimaChave = "",
-    ultimoTempo = 0
+    ultimoTempo = 0,
+    ultimoAvisoReportTempo = 0
 }
 
 function _G.HZAvisosAC.enviar(mensagem, atraso)
@@ -175,6 +176,14 @@ function _G.HZAvisosAC.confirmarReport(nick, id)
     end
     nick = tostring(nick or "")
     if nick == "" or nick == "---" then return end
+    -- Intervalo global entre avisos originados pelo /reports.
+    -- A nova telagem continua funcionando; apenas evita flood no /ac.
+    local ultimoAvisoReport = tonumber(_G.HZAvisosAC.ultimoAvisoReportTempo or 0)
+    if ultimoAvisoReport > 0 and agora - ultimoAvisoReport < 30 then
+        _G.HZAvisosAC.aguardandoReport = false
+        sampAddChatMessage("{FFFF00}[Setor] Telagem iniciada. Aviso /ac suprimido pelo intervalo de 30 segundos.", -1)
+        return
+    end
     local chave = nick:lower() .. "|" .. tostring(id or "")
     if chave == _G.HZAvisosAC.ultimaChave and agora - (_G.HZAvisosAC.ultimoTempo or 0) < 6 then
         _G.HZAvisosAC.aguardandoReport = false
@@ -182,6 +191,7 @@ function _G.HZAvisosAC.confirmarReport(nick, id)
     end
     _G.HZAvisosAC.ultimaChave = chave
     _G.HZAvisosAC.ultimoTempo = agora
+    _G.HZAvisosAC.ultimoAvisoReportTempo = agora
     _G.HZAvisosAC.aguardandoReport = false
     _G.HZAvisosAC.enviar("Estou telando o Player " .. nick, 450)
 end
@@ -1002,21 +1012,6 @@ local function paineltv_OnDrawFrame()
         end
         imgui.EndChild()
 
-        -- Relogio discreto no rodape do Painel TV
-        local relogioTxt = (dataServidor ~= "" and dataServidor or "--/--/--")
-            .. "  |  " .. (relogioServidor ~= "" and relogioServidor or "--:--:--")
-
-        imgui.Spacing()
-        imgui.Separator()
-        imgui.BeginChild("##hz_relogio_tv", V(0, 20), false)
-        local txtSize = imgui.CalcTextSize(u8(relogioTxt))
-        local posXRelogio = (imgui.GetWindowWidth() - txtSize.x) / 2
-        if posXRelogio < 0 then posXRelogio = 0 end
-        imgui.SetCursorPosX(posXRelogio)
-        imgui.SetCursorPosY(2)
-        imgui.TextColored(C_MUTED, u8(relogioTxt))
-        imgui.EndChild()
-
     elseif menuAtual == "categorias" then
         imgui.TextColored(C_LINE, u8"PUNICOES")
         imgui.TextColored(C_MUTED, u8"Selecione o tipo de acao")
@@ -1185,6 +1180,20 @@ local function paineltv_OnDrawFrame()
         end
     end
 
+    -- Rodape comum: permanece visivel em todas as abas do Painel TV.
+    local relogioTxt = (dataServidor ~= "" and dataServidor or "--/--/--")
+        .. "  |  " .. (relogioServidor ~= "" and relogioServidor or "--:--:--")
+    imgui.Spacing()
+    imgui.Separator()
+    imgui.BeginChild("##hz_relogio_tv", V(0, 20), false)
+    local txtSize = imgui.CalcTextSize(u8(relogioTxt))
+    local posXRelogio = (imgui.GetWindowWidth() - txtSize.x) / 2
+    if posXRelogio < 0 then posXRelogio = 0 end
+    imgui.SetCursorPosX(posXRelogio)
+    imgui.SetCursorPosY(2)
+    imgui.TextColored(C_MUTED, u8(relogioTxt))
+    imgui.EndChild()
+
     alturaJanela = imgui.GetCursorPosY() + 12
 
     -- Um clique fora da janela encerra o foco e devolve mouse/teclado ao jogo.
@@ -1261,6 +1270,16 @@ local function paineltv_onTextDrawSetString(id, text) paineltv_parse_info(text) 
 local function paineltv_onShowPlayerTextDraw(playerId, data) if data.text then paineltv_parse_info(data.text) end end
 local function paineltv_onPlayerTextDrawSetString(playerId, id, text) paineltv_parse_info(text) end
 
+function _G.HZPainelTVEncerrarTelagem()
+    idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
+    ultimoIdTelado = "---"
+    setCursor(false)
+    aguardandoConfirmBanPerm = false
+    janela.v = false
+    painelAbertoPorAuto = false
+    menuAtual = "principal"
+end
+
 local function paineltv_onSendCommand(cmd)
     local cmdAc = tostring(cmd or ""):lower():match("^%s*(.-)%s*$")
     if cmdAc == "/reports" or cmdAc:match("^/reports%s+") then
@@ -1272,22 +1291,13 @@ local function paineltv_onSendCommand(cmd)
 
     if cmdAc:match("^/tvoff") then
         _G.HZAvisosAC.aguardandoReport = false
-        idTelado, rgTelado, nickTelado = "---", "---", "---"
-        ultimoIdTelado = "---"
-        setCursor(false)
-        aguardandoConfirmBanPerm = false
+        _G.HZPainelTVEncerrarTelagem()
 
         if fecharPainelSempreTvoff then
-            janela.v = false
-            painelAbertoPorAuto = false
-            menuAtual = "principal"
             return
         end
 
-        if painelAbertoPorAuto then
-            janela.v = false
-            painelAbertoPorAuto = false
-        end
+        return
     end
 end
 
@@ -1433,6 +1443,7 @@ local configSistema = {
     modsEscala = 1.0,
     automacaoSaciarme = true,
     automacaoMensagens = true,
+    automacoesPersonalizadas = {},
     modulos = {
         painel_tv = true,
         navegacao_tv = true,
@@ -1534,6 +1545,7 @@ local lastTvSentTime = 0
 -- RGs capturados diretamente do chat no formato Nome[RG].
 -- Usado pelos comandos autorizados para resolver nick -> RG sem depender de telagem previa.
 local rgChatPorNick = {}
+_G.HZNomeChatPorRG = _G.HZNomeChatPorRG or {}
 
 local function montarComandoComRG(cmd, rg)
     local original = tostring(cmd or "")
@@ -1608,6 +1620,9 @@ local function aplicarConfigSistema()
     configSistema.modsModoSeguro = true
     if configSistema.automacaoSaciarme == nil then configSistema.automacaoSaciarme = true end
     if configSistema.automacaoMensagens == nil then configSistema.automacaoMensagens = true end
+    if type(configSistema.automacoesPersonalizadas) ~= "table" then
+        configSistema.automacoesPersonalizadas = {}
+    end
 end
 
 local function salvarConfigSistema(forcar)
@@ -2393,6 +2408,12 @@ function _G.HZAvisosAC.nomePorRG(rg)
     end
     local nome = getInfoRG(rg)
     if nome and nome ~= "Desconhecido" then return tostring(nome) end
+    -- O par Nome[RG] pode ter acabado de ser capturado no chat de duvidas
+    -- e ainda nao ter sido gravado no banco persistente. Consulta o cache
+    -- imediato para o aviso do /ac nunca cair em "RG 123" desnecessariamente.
+    if _G.HZNomeChatPorRG[rg] and tostring(_G.HZNomeChatPorRG[rg]) ~= "" then
+        return tostring(_G.HZNomeChatPorRG[rg])
+    end
     for id, rgSalvo in pairs(rgCache) do
         if tostring(rgSalvo) == rg and sampIsPlayerConnected(tonumber(id)) then
             return tostring(sampGetPlayerNickname(tonumber(id)) or ("RG " .. rg))
@@ -2937,6 +2958,34 @@ function _G.HZAtualizarAutomacoesStaff()
     if configSistema.automacaoMensagens ~= false
         and staffSupportActive and os.time() >= staffSupportNextTime then
         sendStaffSupportMessage()
+    end
+
+    -- Automacoes criadas pelo /setorauto. Os horarios pertencem somente a
+    -- sessao atual e nunca sao enviados enquanto a staff estiver deslogada.
+    _G.HZAutoPersonalizadasProximas = _G.HZAutoPersonalizadasProximas or {}
+    if not _G.HZStaffLogada then
+        _G.HZAutoPersonalizadasSessao = false
+        _G.HZAutoPersonalizadasProximas = {}
+        return
+    end
+    if not _G.HZAutoPersonalizadasSessao then
+        _G.HZAutoPersonalizadasSessao = true
+        _G.HZAutoPersonalizadasProximas = {}
+    end
+
+    local agoraAuto = os.time()
+    for indice, item in ipairs(configSistema.automacoesPersonalizadas or {}) do
+        local comando = tostring(type(item) == "table" and item.comando or "")
+        local intervalo = math.max(5, math.floor(tonumber(type(item) == "table" and item.intervalo) or 60))
+        if comando ~= "" and (type(item) ~= "table" or item.ativo ~= false) then
+            local proxima = tonumber(_G.HZAutoPersonalizadasProximas[indice])
+            if not proxima then
+                _G.HZAutoPersonalizadasProximas[indice] = agoraAuto + intervalo
+            elseif agoraAuto >= proxima then
+                sampSendChat(comando)
+                _G.HZAutoPersonalizadasProximas[indice] = agoraAuto + intervalo
+            end
+        end
     end
 end
 
@@ -3827,6 +3876,15 @@ end
 _G.HZDialogComandosId = 28991
 _G.HZDialogModsId = 28992
 _G.HZDialogAutomacoesId = 28993
+_G.HZDialogAutoListaId = 28994
+_G.HZDialogAutoCriarComandoId = 28995
+_G.HZDialogAutoCriarTempoId = 28996
+_G.HZDialogAutoGerenciarId = 28997
+_G.HZDialogAutoEditarComandoId = 28998
+_G.HZDialogAutoEditarTempoId = 28999
+_G.HZDialogAutoExcluirId = 29000
+_G.HZAutoDialogSelecionado = nil
+_G.HZAutoNovoComando = nil
 _G.HZModsCategorias = {
     { "PAINEIS", "Painel TV, atendimento e monitoramento.", { "painel_tv", "atendimento", "monitoramento" } },
     { "NAVEGACAO", "Atalhos para navegar entre jogadores.", { "navegacao_tv" } },
@@ -3842,7 +3900,6 @@ function _G.HZAbrirPainelAutomacoes()
     end
     if _G.HZFecharPainelMods then _G.HZFecharPainelMods() end
 
-    local moduloGeral = _G.HZModuloAtivo("automacoes_staff")
     local estadoSaciarme = configSistema.automacaoSaciarme ~= false and "ATIVO" or "DESATIVADO"
     local estadoMensagens = configSistema.automacaoMensagens ~= false and "ATIVO" or "DESATIVADO"
     local texto = table.concat({
@@ -3851,10 +3908,7 @@ function _G.HZAbrirPainelAutomacoes()
             "] {A8B5C8}- 30 segundos; depois 15 em 15 minutos.",
         "{48C6FF}MENSAGENS AUTOMATICAS  " ..
             (estadoMensagens == "ATIVO" and "{3EDC81}" or "{FFB347}") .. "[" .. estadoMensagens ..
-            "] {A8B5C8}- Mensagens do cargo no /A.",
-        "{48C6FF}MODULO GERAL  " ..
-            (moduloGeral and "{3EDC81}[ATIVO]" or "{FF6B6B}[DESATIVADO]") ..
-            " {A8B5C8}- Liga ou desliga todas as automacoes."
+            "] {A8B5C8}- Mensagens do cargo no /A."
     }, "\n")
     sampShowDialog(_G.HZDialogAutomacoesId,
         "SETOR ADVANCED - AUTOMACOES STAFF",
@@ -3887,14 +3941,71 @@ function _G.HZAlternarAutomacao(indice)
         sampAddChatMessage((configSistema.automacaoMensagens and
             "{3EDC81}[AUTOMACOES] Mensagens automaticas ativadas." or
             "{FFB347}[AUTOMACOES] Mensagens automaticas desativadas."), -1)
-    elseif tonumber(indice) == 2 then
-        local novoEstado = not _G.HZModuloAtivo("automacoes_staff")
-        return _G.HZDefinirModulo("automacoes_staff", novoEstado)
     else
         return false
     end
     salvarConfigSistema(true)
     return true
+end
+
+function _G.HZAutoLista()
+    if type(configSistema.automacoesPersonalizadas) ~= "table" then
+        configSistema.automacoesPersonalizadas = {}
+    end
+    return configSistema.automacoesPersonalizadas
+end
+
+function _G.HZAutoComandoValido(valor)
+    valor = tostring(valor or ""):match("^%s*(.-)%s*$")
+    if valor == "" or valor:sub(1, 1) ~= "/" then return nil end
+    return valor
+end
+
+function _G.HZAbrirSetorAuto()
+    if not _G.HZExigirStaff("/setorauto") then return false end
+    if not _G.HZTemPermissaoModulo("automacoes_staff") then
+        return sampAddChatMessage("{FF6B6B}[SETOR AUTO] Recurso bloqueado para seu cargo.", -1)
+    end
+
+    local linhas = {"{3EDC81}[+] CRIAR NOVA AUTOMACAO"}
+    local lista = _G.HZAutoLista()
+    for i, item in ipairs(lista) do
+        local estado = item.ativo == false and "{FF6B6B}DESATIVADA" or "{3EDC81}ATIVA"
+        linhas[#linhas + 1] = string.format(
+            "{FFFFFF}%02d. %s {FFFFFF}| %s | %ds",
+            i, estado, tostring(item.comando or "?"), tonumber(item.intervalo) or 60
+        )
+    end
+    if #lista == 0 then
+        linhas[#linhas + 1] = "{A8B5C8}Nenhuma automacao criada."
+    end
+    sampShowDialog(_G.HZDialogAutoListaId, "SETOR AUTO - AUTOMACOES",
+        table.concat(linhas, "\n"), "ABRIR", "FECHAR", 2)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
+    return true
+end
+
+function _G.HZAbrirGerenciarSetorAuto(indice)
+    local item = _G.HZAutoLista()[tonumber(indice) or 0]
+    if not item then return _G.HZAbrirSetorAuto() end
+    _G.HZAutoDialogSelecionado = tonumber(indice)
+    local estado = item.ativo == false and "DESATIVADA" or "ATIVA"
+    local texto = table.concat({
+        item.ativo == false and "{3EDC81}ATIVAR" or "{FFB347}DESATIVAR",
+        "{FFFFFF}EDITAR COMANDO",
+        "{FFFFFF}EDITAR TEMPO",
+        "{FF6B6B}EXCLUIR"
+    }, "\n")
+    local titulo = string.format("SETOR AUTO - %s | %ss | %s",
+        tostring(item.comando or "?"), tostring(item.intervalo or 60), estado)
+    sampShowDialog(_G.HZDialogAutoGerenciarId, titulo,
+        texto, "ABRIR", "VOLTAR", 2)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
+end
+
+function _G.HZSalvarAutomacoesPersonalizadas()
+    _G.HZAutoPersonalizadasProximas = {}
+    salvarConfigSistema(true)
 end
 
 function _G.HZAbrirModsDialog(tela)
@@ -3959,6 +4070,7 @@ function _G.HZAbrirSetorComandos()
         "{48C6FF}PAINEL E MODULOS",
         "{FFFFFF}/mods {A8B5C8}- Abre ou fecha a central de modulos.",
         "{FFFFFF}/automacoes {A8B5C8}- Controla /saciarme e mensagens automaticas.",
+        "{FFFFFF}/setorauto {A8B5C8}- Cria, edita e exclui comandos automaticos.",
         "{FFFFFF}/setorcomandos {A8B5C8}- Abre esta janela de ajuda.",
         "{FFFFFF}/tvz {A8B5C8}- Abre ou fecha manualmente o Painel TV.",
         "{FFFFFF}/kj {A8B5C8}- Liga ou desliga o cursor do Painel TV.",
@@ -4967,6 +5079,12 @@ local function setor_main()
     sampRegisterChatCommand("automacoes", function()
         _G.HZAbrirPainelAutomacoes()
     end)
+    sampRegisterChatCommand("setorautomacoes", function()
+        _G.HZAbrirPainelAutomacoes()
+    end)
+    sampRegisterChatCommand("setorauto", function()
+        _G.HZAbrirSetorAuto()
+    end)
 
     -- MUTE (COMANDO DIRETO - SETOR SEGURANÇA)
     sampRegisterChatCommand("mu", function(arg)
@@ -5160,6 +5278,23 @@ local function setor_main()
         end
     end)
 
+    -- O painel de atendimento precisa ser desenhado em todo frame.
+    -- Desenha-lo no loop de 10 ms causava piscadas em algumas taxas de FPS.
+    if not _G.HZAtendimentoRenderIniciado then
+        _G.HZAtendimentoRenderIniciado = true
+        lua_thread.create(function()
+            while true do
+                wait(0)
+                if _G.HZModuloAtivo("atendimento") and (emAtendimento or jogadorCaiu) then
+                    desenharPainelVisual()
+                    if jogadorCaiu and os.time() > tempoExibicaoAviso then
+                        jogadorCaiu = false
+                    end
+                end
+            end
+        end)
+    end
+
     -- LOOP PRINCIPAL
     while true do
         -- O sistema nao precisa executar milhares de verificacoes por segundo.
@@ -5283,12 +5418,6 @@ local function setor_main()
             end
         end
 
-        if _G.HZModuloAtivo("atendimento") and (emAtendimento or jogadorCaiu) then
-            desenharPainelVisual()
-            if jogadorCaiu and os.time() > tempoExibicaoAviso then 
-                jogadorCaiu = false 
-            end
-        end
     end
 end
 
@@ -5761,6 +5890,7 @@ function _G.HZCapturarParesNomeRGDoChat(cleanText)
         if not ignorar[nomeLower] and nome:match("%a") and rg and rg ~= "" then
             local chaveNick = compactarBuscaNome(nome)
             rgChatPorNick[chaveNick] = tostring(rg)
+            _G.HZNomeChatPorRG[tostring(rg)] = tostring(nome)
 
             -- Liga imediatamente o RG ao ID atual da TAB quando o nick estiver online.
             -- Assim os comandos autorizados por nome funcionam sem depender de /tv previo.
@@ -5919,6 +6049,7 @@ local function setor_onServerMessage(color, text)
         local nomeDuvida, rgDuvida = cleanText:match("[Dd][Uu][Vv][Ii][Dd][Aa]%s+de%s+([%a%d_]+)%[(%d+)%]%s*:")
         if nomeDuvida and rgDuvida then
             rgChatPorNick[compactarBuscaNome(nomeDuvida)] = tostring(rgDuvida)
+            _G.HZNomeChatPorRG[tostring(rgDuvida)] = tostring(nomeDuvida)
         end
     end
 
@@ -6017,9 +6148,22 @@ local function setor_onServerMessage(color, text)
     if cleanText:find("atendendo o%(a%) jogador%(a%)") then
         local nome, id = cleanText:match("jogador%(a%)%s+([%a%d_]+)%[(%d+)%]")
         if nome and id then
+            local atendimentoNovo = not emAtendimento
+                or tostring(idJogadorAtendido) ~= tostring(id)
+                or tostring(nickJogadorAtendido):lower() ~= tostring(nome):lower()
             nickJogadorAtendido, idJogadorAtendido = nome, id
             emAtendimento, jogadorCaiu, historicoConversa = true, false, {}
             tempoInicio = os.time()
+            if atendimentoNovo then
+                lua_thread.create(function()
+                    wait(350)
+                    if emAtendimento
+                        and tostring(idJogadorAtendido) == tostring(id)
+                        and tostring(nickJogadorAtendido):lower() == tostring(nome):lower() then
+                        sampSendChat("Ola, como posso ajudar?")
+                    end
+                end)
+            end
         end
     end
 
@@ -6358,7 +6502,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.07",
+    versao = "2.18",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -6600,6 +6744,170 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
     if tonumber(id) == tonumber(_G.HZDialogComandosId) then
         return false
     end
+    if tonumber(id) == tonumber(_G.HZDialogAutoListaId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou then
+            local linha = tonumber(listboxId) or 0
+            lua_thread.create(function()
+                wait(100)
+                if linha == 0 then
+                    sampShowDialog(_G.HZDialogAutoCriarComandoId,
+                        "SETOR AUTO - NOVO COMANDO",
+                        "Digite o comando completo.\nExemplo: /a (Texto)",
+                        "PROXIMO", "CANCELAR", 1)
+                    if type(sampSetDialogClientside) == "function" then
+                        sampSetDialogClientside(false)
+                    end
+                elseif _G.HZAutoLista()[linha] then
+                    _G.HZAbrirGerenciarSetorAuto(linha)
+                else
+                    _G.HZAbrirSetorAuto()
+                end
+            end)
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogAutoCriarComandoId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou then
+            local comando = _G.HZAutoComandoValido(input)
+            if not comando then
+                sampAddChatMessage("{FF6B6B}[SETOR AUTO] Digite um comando iniciado por /.", -1)
+                lua_thread.create(function() wait(100); _G.HZAbrirSetorAuto() end)
+                return false
+            end
+            _G.HZAutoNovoComando = comando
+            lua_thread.create(function()
+                wait(100)
+                sampShowDialog(_G.HZDialogAutoCriarTempoId,
+                    "SETOR AUTO - INTERVALO",
+                    "Digite o intervalo em segundos.\nMinimo: 5 segundos.",
+                    "CRIAR", "CANCELAR", 1)
+                if type(sampSetDialogClientside) == "function" then
+                    sampSetDialogClientside(false)
+                end
+            end)
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogAutoCriarTempoId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou then
+            local segundos = math.floor(tonumber(tostring(input or ""):match("%d+")) or 0)
+            if segundos < 5 or not _G.HZAutoNovoComando then
+                sampAddChatMessage("{FF6B6B}[SETOR AUTO] Use um tempo de pelo menos 5 segundos.", -1)
+            else
+                table.insert(_G.HZAutoLista(), {
+                    comando = _G.HZAutoNovoComando,
+                    intervalo = segundos,
+                    ativo = true
+                })
+                _G.HZSalvarAutomacoesPersonalizadas()
+                sampAddChatMessage("{3EDC81}[SETOR AUTO] Automacao criada e ativada.", -1)
+            end
+            _G.HZAutoNovoComando = nil
+            lua_thread.create(function() wait(100); _G.HZAbrirSetorAuto() end)
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogAutoGerenciarId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        local indice = tonumber(_G.HZAutoDialogSelecionado)
+        local item = indice and _G.HZAutoLista()[indice] or nil
+        if not confirmou then
+            lua_thread.create(function() wait(100); _G.HZAbrirSetorAuto() end)
+        elseif item then
+            local acao = tonumber(listboxId) or 0
+            if acao == 0 then
+                item.ativo = item.ativo == false
+                _G.HZSalvarAutomacoesPersonalizadas()
+                lua_thread.create(function() wait(100); _G.HZAbrirGerenciarSetorAuto(indice) end)
+            elseif acao == 1 then
+                lua_thread.create(function()
+                    wait(100)
+                    sampShowDialog(_G.HZDialogAutoEditarComandoId,
+                        "SETOR AUTO - EDITAR COMANDO",
+                        "Atual: " .. tostring(item.comando or "") .. "\nDigite o novo comando:",
+                        "SALVAR", "CANCELAR", 1)
+                    if type(sampSetDialogClientside) == "function" then
+                        sampSetDialogClientside(false)
+                    end
+                end)
+            elseif acao == 2 then
+                lua_thread.create(function()
+                    wait(100)
+                    sampShowDialog(_G.HZDialogAutoEditarTempoId,
+                        "SETOR AUTO - EDITAR TEMPO",
+                        "Atual: " .. tostring(item.intervalo or 60) ..
+                            " segundos\nDigite o novo intervalo:",
+                        "SALVAR", "CANCELAR", 1)
+                    if type(sampSetDialogClientside) == "function" then
+                        sampSetDialogClientside(false)
+                    end
+                end)
+            elseif acao == 3 then
+                lua_thread.create(function()
+                    wait(100)
+                    sampShowDialog(_G.HZDialogAutoExcluirId,
+                        "SETOR AUTO - CONFIRMAR EXCLUSAO",
+                        "Excluir permanentemente?\n" .. tostring(item.comando or ""),
+                        "EXCLUIR", "CANCELAR", 0)
+                    if type(sampSetDialogClientside) == "function" then
+                        sampSetDialogClientside(false)
+                    end
+                end)
+            end
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogAutoEditarComandoId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        local indice = tonumber(_G.HZAutoDialogSelecionado)
+        local item = indice and _G.HZAutoLista()[indice] or nil
+        if confirmou and item then
+            local comando = _G.HZAutoComandoValido(input)
+            if comando then
+                item.comando = comando
+                _G.HZSalvarAutomacoesPersonalizadas()
+                sampAddChatMessage("{3EDC81}[SETOR AUTO] Comando atualizado.", -1)
+            else
+                sampAddChatMessage("{FF6B6B}[SETOR AUTO] O comando deve iniciar por /.", -1)
+            end
+        end
+        lua_thread.create(function() wait(100); _G.HZAbrirGerenciarSetorAuto(indice) end)
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogAutoEditarTempoId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        local indice = tonumber(_G.HZAutoDialogSelecionado)
+        local item = indice and _G.HZAutoLista()[indice] or nil
+        if confirmou and item then
+            local segundos = math.floor(tonumber(tostring(input or ""):match("%d+")) or 0)
+            if segundos >= 5 then
+                item.intervalo = segundos
+                _G.HZSalvarAutomacoesPersonalizadas()
+                sampAddChatMessage("{3EDC81}[SETOR AUTO] Intervalo atualizado.", -1)
+            else
+                sampAddChatMessage("{FF6B6B}[SETOR AUTO] O minimo e 5 segundos.", -1)
+            end
+        end
+        lua_thread.create(function() wait(100); _G.HZAbrirGerenciarSetorAuto(indice) end)
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogAutoExcluirId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        local indice = tonumber(_G.HZAutoDialogSelecionado)
+        if confirmou and indice and _G.HZAutoLista()[indice] then
+            table.remove(_G.HZAutoLista(), indice)
+            _G.HZSalvarAutomacoesPersonalizadas()
+            _G.HZAutoDialogSelecionado = nil
+            sampAddChatMessage("{3EDC81}[SETOR AUTO] Automacao excluida.", -1)
+            lua_thread.create(function() wait(100); _G.HZAbrirSetorAuto() end)
+        else
+            lua_thread.create(function() wait(100); _G.HZAbrirGerenciarSetorAuto(indice) end)
+        end
+        return false
+    end
     if tonumber(id) == tonumber(_G.HZDialogAutomacoesId) then
         local confirmou = button == true or button == 1 or tostring(button) == "1"
         if confirmou then
@@ -6666,6 +6974,15 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
 end
 
 function samp.onServerMessage(color, text)
+    local mensagemTv = tostring(text or ""):gsub("{%x%x%x%x%x%x}", ""):lower()
+    if mensagemTv:find("parou de telar", 1, true)
+        or mensagemTv:find("telagem finalizada", 1, true)
+        or mensagemTv:find("telagem encerrada", 1, true)
+        or mensagemTv:find("modo espectador desativado", 1, true) then
+        if _G.HZPainelTVEncerrarTelagem then
+            _G.HZPainelTVEncerrarTelagem()
+        end
+    end
     if setor_onServerMessage then
         return setor_onServerMessage(color, text)
     end
@@ -6688,5 +7005,8 @@ function sampev.onPlayerTextDrawSetString(playerId, id, text)
 end
 
 function samp.onPlayerQuit(id, reason)
+    if tostring(id or "") == tostring(idTelado or "") and _G.HZPainelTVEncerrarTelagem then
+        _G.HZPainelTVEncerrarTelagem()
+    end
     if setor_onPlayerQuit then return setor_onPlayerQuit(id, reason) end
 end
