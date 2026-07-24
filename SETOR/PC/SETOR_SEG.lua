@@ -6358,7 +6358,10 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.06",
+    versao = "2.07",
+    apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
+    apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
+    apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
@@ -6368,6 +6371,30 @@ _G.HZUpdaterPC = _G.HZUpdaterPC or {
 function _G.HZUpdaterPC.corpoResposta(res)
     if type(res) ~= "table" then return nil end
     return res.text or res.body or res.data
+end
+
+function _G.HZUpdaterPC.baixar(apiUrl, rawUrl)
+    local opcoes = {headers = {
+        ["Accept"] = "application/vnd.github.raw+json",
+        ["User-Agent"] = "Setor-PC-Updater",
+        ["X-GitHub-Api-Version"] = "2022-11-28"
+    }}
+    local fontes = {{apiUrl, opcoes}, {rawUrl, nil}}
+    for _, fonte in ipairs(fontes) do
+        if type(fonte[1]) == "string" and fonte[1] ~= "" then
+            local sep = fonte[1]:find("?", 1, true) and "&" or "?"
+            local url = fonte[1] .. sep .. "setor_cache=" .. tostring(os.time())
+            local ok, res
+            if fonte[2] then
+                ok, res = pcall(requests.get, url, fonte[2])
+            else
+                ok, res = pcall(requests.get, url)
+            end
+            local corpo = ok and _G.HZUpdaterPC.corpoResposta(res) or nil
+            if type(corpo) == "string" and corpo ~= "" then return corpo end
+        end
+    end
+    return nil
 end
 
 function _G.HZUpdaterPC.remotaMaior(remota, instalada)
@@ -6383,19 +6410,14 @@ function _G.HZUpdaterPC.remotaMaior(remota, instalada)
 end
 
 function _G.HZUpdaterPC.obterVersao()
-    local url = _G.HZUpdaterPC.urlVersao .. "?setor_cache=" .. tostring(os.time())
-    local ok, res = pcall(requests.get, url)
-    if not ok then return nil end
-    local corpo = _G.HZUpdaterPC.corpoResposta(res)
+    local corpo = _G.HZUpdaterPC.baixar(_G.HZUpdaterPC.apiVersao, _G.HZUpdaterPC.urlVersao)
     return corpo and tostring(corpo):match("([%d%.]+)") or nil
 end
 
 function _G.HZUpdaterPC.garantirBootstrap()
     local path = getWorkingDirectory() .. "\\SETOR_UPDATER.lua"
     if doesFileExist(path) then return true end
-    local url = _G.HZUpdaterPC.urlBootstrap .. "?setor_cache=" .. tostring(os.time())
-    local ok, res = pcall(requests.get, url)
-    local codigo = ok and _G.HZUpdaterPC.corpoResposta(res) or nil
+    local codigo = _G.HZUpdaterPC.baixar(_G.HZUpdaterPC.apiBootstrap, _G.HZUpdaterPC.urlBootstrap)
     if type(codigo) ~= "string" or #codigo < 4000
         or not codigo:find('script_name("SETOR Updater")', 1, true) then
         sampAddChatMessage("{FFFF00}[SETOR UPDATE]: Instale SETOR_UPDATER.lua para habilitar recuperacao automatica.", -1)
@@ -6467,8 +6489,7 @@ function _G.HZUpdaterPC.instalar(silencioso)
             return
         end
 
-        local ok, res = pcall(requests.get, _G.HZUpdaterPC.urlScript)
-        local novo = ok and _G.HZUpdaterPC.corpoResposta(res) or nil
+        local novo = _G.HZUpdaterPC.baixar(_G.HZUpdaterPC.apiScript, _G.HZUpdaterPC.urlScript)
         local versaoNoCodigo = novo and tostring(novo):match('versao%s*=%s*"([%d%.]+)"') or nil
         local compilado = novo and loadstring(novo, "@SETOR_SEG.download") or nil
         if not novo or #novo < 50000 or not tostring(novo):find("SETOR")

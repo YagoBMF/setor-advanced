@@ -3,8 +3,16 @@ script_author("Respected")
 require "lib.moonloader"
 
 local requests = require "requests"
-local VERSAO_URL = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt"
-local SCRIPT_URL = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua"
+local API_BASE = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/"
+local VERSAO_URL = API_BASE .. "versao.txt?ref=main"
+local SCRIPT_URL = API_BASE .. "SETOR_SEG.lua?ref=main"
+local VERSAO_RAW_URL = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt"
+local SCRIPT_RAW_URL = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua"
+local GITHUB_OPTIONS = {headers = {
+    ["Accept"] = "application/vnd.github.raw+json",
+    ["User-Agent"] = "Setor-PC-Updater",
+    ["X-GitHub-Api-Version"] = "2022-11-28"
+}}
 local SCRIPT_PATH = getWorkingDirectory() .. "\\SETOR_SEG.lua"
 local BACKUP_PATH = SCRIPT_PATH .. ".bak"
 local TEMP_PATH = SCRIPT_PATH .. ".download"
@@ -41,12 +49,22 @@ local function urlNova(url)
     return url .. sep .. "setor_cache=" .. tostring(os.time()) .. tostring(math.random(1000, 9999))
 end
 
-local function baixar(url)
-    for tentativa = 1, 3 do
-        local ok, res = pcall(requests.get, urlNova(url))
-        local data = ok and corpo(res) or nil
-        if type(data) == "string" and data ~= "" then return data end
-        wait(700 * tentativa)
+local function baixar(urlApi, urlRaw)
+    local fontes = {{urlApi, GITHUB_OPTIONS}, {urlRaw, nil}}
+    for _, fonte in ipairs(fontes) do
+        if type(fonte[1]) == "string" and fonte[1] ~= "" then
+            for tentativa = 1, 3 do
+                local ok, res
+                if fonte[2] then
+                    ok, res = pcall(requests.get, urlNova(fonte[1]), fonte[2])
+                else
+                    ok, res = pcall(requests.get, urlNova(fonte[1]))
+                end
+                local data = ok and corpo(res) or nil
+                if type(data) == "string" and data ~= "" then return data end
+                wait(700 * tentativa)
+            end
+        end
     end
     return nil
 end
@@ -106,7 +124,7 @@ local function instalar(silencioso, forcar)
     consultando = true
     lua_thread.create(function()
         if not silencioso then chat("{48C6FF}[SETOR UPDATE]: Consultando GitHub...") end
-        local versaoTexto = baixar(VERSAO_URL)
+        local versaoTexto = baixar(VERSAO_URL, VERSAO_RAW_URL)
         local remota = versaoTexto and versaoTexto:match("([%d%.]+)") or nil
         local instalada = versaoInstalada()
         if not remota then
@@ -119,7 +137,7 @@ local function instalar(silencioso, forcar)
             return
         end
 
-        local novo = baixar(SCRIPT_URL)
+        local novo = baixar(SCRIPT_URL, SCRIPT_RAW_URL)
         local valido, motivo = validar(novo, remota)
         if not valido then
             consultando = false
