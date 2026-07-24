@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.58'
+local VERSION = '3.59'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -2410,7 +2410,7 @@ function samp.onServerMessage(color, text)
             lua_thread.create(function()
                 wait(150)
                 if emAtendimento and tostring(atendimentoRg) == tostring(rgAtendimento) then
-                    sampSendChat('Ola, como posso ajudar?')
+                    sampSendChat('Ola, voce usou o comando /atendimento. Como posso ajudar?')
                 end
             end)
         end
