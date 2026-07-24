@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.55'
+local VERSION = '3.57'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -724,20 +724,48 @@ local function instalarPainelTvMimgui()
     -- Compensa APKs que ampliam a fonte pelo DPI do Android sem ampliar a
     -- janela na mesma proporcao. Em aparelhos normais o fator permanece 1.
     local function fatorDensidadeFonte(escala)
-        if type(mimgui.GetFontSize) ~= 'function' then return 1 end
-        local okFonte, tamanhoFonte = pcall(mimgui.GetFontSize)
-        tamanhoFonte = okFonte and tonumber(tamanhoFonte) or nil
+        local fator = 1
+        local tamanhoFonte = nil
+        if type(mimgui.GetFontSize) == 'function' then
+            local okFonte, valorFonte = pcall(mimgui.GetFontSize)
+            tamanhoFonte = okFonte and tonumber(valorFonte) or nil
+        end
         local esperado = 16 * (tonumber(escala) or 1)
-        if not tamanhoFonte or esperado <= 0 then return 1 end
-        return math.max(1, math.min(1.45, tamanhoFonte / esperado))
+        if tamanhoFonte and esperado > 0 then
+            fator = math.max(fator, tamanhoFonte / esperado)
+        end
+
+        -- Alguns clientes Android desenham a janela em framebuffer reduzido
+        -- (por exemplo 0.5x), mas deixam a fonte próxima do tamanho normal.
+        -- Nesse caso, usar apenas GetFontSize não detecta o recorte.
+        if type(mimgui.GetIO) == 'function' then
+            local okIo, io = pcall(mimgui.GetIO)
+            if okIo and io then
+                local fb = io.DisplayFramebufferScale
+                local fbX = fb and tonumber(fb.x) or nil
+                local fbY = fb and tonumber(fb.y) or nil
+                local menorFb = math.min(fbX or 1, fbY or 1)
+                if menorFb > 0.1 and menorFb < 0.98 then
+                    fator = math.max(fator, 1 / menorFb)
+                end
+                local globalFonte = tonumber(io.FontGlobalScale)
+                if globalFonte and globalFonte > 1 then
+                    fator = math.max(fator, globalFonte)
+                end
+            end
+        end
+
+        return math.max(1, math.min(2.20, fator))
     end
 
     local function aplicarTamanhoCompensado(largura, altura, escala)
         local fator = fatorDensidadeFonte(escala)
         local w = math.floor(largura * fator + 0.5)
         local h = math.floor(altura * fator + 0.5)
-        if type(mimgui.SetWindowSize) == 'function' then
-            pcall(mimgui.SetWindowSize, mimgui.ImVec2(w, h),
+        -- Alguns MonetLoader ignoram SetWindowSize depois de Begin().
+        -- Define o tamanho final antes da janela nascer neste frame.
+        if type(mimgui.SetNextWindowSize) == 'function' then
+            pcall(mimgui.SetNextWindowSize, mimgui.ImVec2(w, h),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
         return w, h
@@ -789,9 +817,9 @@ local function instalarPainelTvMimgui()
                     painelTvMimguiPosCarregada = true
                 end
 
+                janelaW, janelaH = aplicarTamanhoCompensado(janelaW, janelaH, escala)
                 mimgui.Begin('SETOR TV##setor_mobile_tv_' .. tostring(math.floor(escala * 100)), nil, flags)
                 escalarFonteJanela(escala)
-                aplicarTamanhoCompensado(janelaW, janelaH, escala)
                 local idAtual, levelAtual = dadosJogadorAtual()
                 textoResponsivo('NICK: ' .. tostring(nickAtual or 'Aguardando servidor'))
                 textoResponsivo('ID: ' .. tostring(idAtual) .. '  |  LEVEL: ' .. tostring(levelAtual))
@@ -863,10 +891,10 @@ local function instalarPainelTvMimgui()
                     atendimentoPosCarregada = true
                 end
 
+                janelaW, janelaH = aplicarTamanhoCompensado(janelaW, janelaH, escala)
                 mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento_'
                     .. tostring(math.floor(escala * 100)), nil, flags)
                 escalarFonteJanela(escala)
-                aplicarTamanhoCompensado(janelaW, janelaH, escala)
                 local nivel = nivelCargo(cfg.dados.cargo)
                 local disponivel = larguraInterna(255 * escala)
                 if nivel >= 2 then
@@ -931,12 +959,9 @@ local function instalarPainelTvMimgui()
                     suportePosCarregada = true
                 end
 
+                janelaW, janelaH = aplicarTamanhoCompensado(janelaW, janelaH, escala)
                 mimgui.Begin('SUPORTE ATIVO##setor_mobile_suporte_'
                     .. tostring(math.floor(escala * 100)), nil, flags)
-                if type(mimgui.SetWindowSize) == 'function' then
-                    pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
-                end
                 escalarFonteJanela(escala)
                 textoResponsivo('STATUS: ' .. (emAtendimento and 'ON' or 'OFF'))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
