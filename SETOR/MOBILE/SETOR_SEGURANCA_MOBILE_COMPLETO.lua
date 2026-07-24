@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.57'
+local VERSION = '3.58'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -50,12 +50,14 @@ local cfg = inicfg.load({
     modulos = {
         painel_tv = true, navegacao_tv = true,
         monitoramento = true, acoes_staff = true, atendimento = true, logs = true
-    }
+    },
+    automacoes = { total = 0 }
 }, CONFIG_FILE)
 
 -- Migra configuracoes das primeiras versoes sem perder escolhas do usuario.
 cfg.modulos = cfg.modulos or {}
 cfg.interface = cfg.interface or {}
+cfg.automacoes = cfg.automacoes or { total = 0 }
 if cfg.interface.painel_tv_x == nil then cfg.interface.painel_tv_x = 18 end
 if cfg.interface.painel_tv_y == nil then cfg.interface.painel_tv_y = 250 end
 if cfg.interface.painel_tv_visivel == nil then cfg.interface.painel_tv_visivel = true end
@@ -175,6 +177,13 @@ local D_CONFIRMAR_TABELA = 28019
 local D_SELETOR_TV = 28020
 local D_MOD_CATEGORIA = 28021
 local D_SELETOR_COMANDO = 28023
+local D_AUTO_LISTA = 28100
+local D_AUTO_CRIAR_COMANDO = 28101
+local D_AUTO_CRIAR_TEMPO = 28102
+local D_AUTO_GERENCIAR = 28103
+local D_AUTO_EDITAR_COMANDO = 28104
+local D_AUTO_EDITAR_TEMPO = 28105
+local D_AUTO_EXCLUIR = 28106
 local dialogAction = nil
 local punicaoTabelaSelecionada = nil
 local jogadoresSeletorTV = {}
@@ -261,6 +270,182 @@ end
 
 local function trim(s)
     return tostring(s or ''):match('^%s*(.-)%s*$')
+end
+
+-- Automacoes personalizadas do /setorauto (dialogos nativos).
+local automacoesPersonalizadas, automacoesProximas = {}, {}
+local autoSelecionada, autoNovoComando = nil, nil
+
+local function carregarAutomacoesPersonalizadas()
+    automacoesPersonalizadas = {}
+    local total = math.max(0, math.floor(tonumber(cfg.automacoes.total) or 0))
+    for i = 1, total do
+        local comando = trim(cfg.automacoes['comando_' .. i])
+        local intervalo = math.max(5, math.floor(tonumber(cfg.automacoes['intervalo_' .. i]) or 60))
+        if comando ~= '' and comando:sub(1, 1) == '/' then
+            automacoesPersonalizadas[#automacoesPersonalizadas + 1] = {
+                comando = comando,
+                intervalo = intervalo,
+                ativo = cfg.automacoes['ativo_' .. i] ~= false
+            }
+        end
+    end
+end
+
+local function salvarAutomacoesPersonalizadas()
+    cfg.automacoes = cfg.automacoes or {}
+    cfg.automacoes.total = #automacoesPersonalizadas
+    for i, item in ipairs(automacoesPersonalizadas) do
+        cfg.automacoes['comando_' .. i] = tostring(item.comando or '')
+        cfg.automacoes['intervalo_' .. i] = tonumber(item.intervalo) or 60
+        cfg.automacoes['ativo_' .. i] = item.ativo ~= false
+    end
+    automacoesProximas = {}
+    inicfg.save(cfg, CONFIG_FILE)
+end
+
+local function mostrarDialogoAuto(id, titulo, texto, botao1, botao2, estilo)
+    sampShowDialog(id, titulo, texto, botao1 or 'ABRIR', botao2 or 'VOLTAR', estilo or 2)
+    if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
+end
+
+local function abrirSetorAuto()
+    local linhas = {'{3EDC81}[+] CRIAR NOVA AUTOMACAO'}
+    for i, item in ipairs(automacoesPersonalizadas) do
+        linhas[#linhas + 1] = string.format('{FFFFFF}%02d. %s {FFFFFF}| %s | %ds',
+            i, item.ativo == false and '{FF6B6B}DESATIVADA' or '{3EDC81}ATIVA',
+            tostring(item.comando or '?'), tonumber(item.intervalo) or 60)
+    end
+    if #automacoesPersonalizadas == 0 then
+        linhas[#linhas + 1] = '{A8B5C8}Nenhuma automacao criada.'
+    end
+    mostrarDialogoAuto(D_AUTO_LISTA, 'SETOR AUTO - AUTOMACOES',
+        table.concat(linhas, '\n'), 'ABRIR', 'FECHAR', 2)
+end
+
+local function abrirGerenciarAuto(indice)
+    local item = automacoesPersonalizadas[tonumber(indice) or 0]
+    if not item then return abrirSetorAuto() end
+    autoSelecionada = tonumber(indice)
+    mostrarDialogoAuto(D_AUTO_GERENCIAR,
+        string.format('SETOR AUTO - %ss | %s', tostring(item.intervalo or 60),
+            item.ativo == false and 'DESATIVADA' or 'ATIVA'),
+        table.concat({
+            item.ativo == false and '{3EDC81}ATIVAR' or '{FFB347}DESATIVAR',
+            '{FFFFFF}EDITAR COMANDO',
+            '{FFFFFF}EDITAR TEMPO',
+            '{FF6B6B}EXCLUIR'
+        }, '\n'), 'ABRIR', 'VOLTAR', 2)
+end
+
+local function respostaSetorAuto(dialogId, button, listboxId, input)
+    if dialogId < D_AUTO_LISTA or dialogId > D_AUTO_EXCLUIR then return false end
+    local confirmou = button == true or tonumber(button) == 1
+    if dialogId == D_AUTO_LISTA then
+        if confirmou then
+            local linha = tonumber(listboxId) or 0
+            lua_thread.create(function()
+                wait(100)
+                if linha == 0 then
+                    mostrarDialogoAuto(D_AUTO_CRIAR_COMANDO, 'SETOR AUTO - NOVO COMANDO',
+                        'Digite o comando completo.\nExemplo: /a (Texto)',
+                        'PROXIMO', 'CANCELAR', 1)
+                elseif automacoesPersonalizadas[linha] then
+                    abrirGerenciarAuto(linha)
+                end
+            end)
+        end
+    elseif dialogId == D_AUTO_CRIAR_COMANDO then
+        if confirmou then
+            local comando = trim(input)
+            if comando == '' or comando:sub(1, 1) ~= '/' then
+                chat('{FF5555}', 'O comando deve iniciar por /.')
+            else
+                autoNovoComando = comando
+                lua_thread.create(function()
+                    wait(100)
+                    mostrarDialogoAuto(D_AUTO_CRIAR_TEMPO, 'SETOR AUTO - INTERVALO',
+                        'Digite o intervalo em segundos.\nMinimo: 5 segundos.',
+                        'CRIAR', 'CANCELAR', 1)
+                end)
+            end
+        end
+    elseif dialogId == D_AUTO_CRIAR_TEMPO then
+        if confirmou and autoNovoComando then
+            local segundos = math.floor(tonumber(tostring(input or ''):match('%d+')) or 0)
+            if segundos < 5 then
+                chat('{FF5555}', 'Use um intervalo de pelo menos 5 segundos.')
+            else
+                automacoesPersonalizadas[#automacoesPersonalizadas + 1] = {
+                    comando = autoNovoComando, intervalo = segundos, ativo = true
+                }
+                salvarAutomacoesPersonalizadas()
+                chat('{3EDC81}', 'Automacao criada e ativada.')
+                lua_thread.create(function() wait(100) abrirSetorAuto() end)
+            end
+        end
+        autoNovoComando = nil
+    elseif dialogId == D_AUTO_GERENCIAR then
+        local item = automacoesPersonalizadas[tonumber(autoSelecionada) or 0]
+        if not confirmou then
+            lua_thread.create(function() wait(100) abrirSetorAuto() end)
+        elseif item then
+            local acao = tonumber(listboxId) or 0
+            if acao == 0 then
+                item.ativo = item.ativo == false
+                salvarAutomacoesPersonalizadas()
+                lua_thread.create(function() wait(100) abrirGerenciarAuto(autoSelecionada) end)
+            elseif acao == 1 then
+                lua_thread.create(function()
+                    wait(100)
+                    mostrarDialogoAuto(D_AUTO_EDITAR_COMANDO, 'SETOR AUTO - EDITAR COMANDO',
+                        'Atual: ' .. tostring(item.comando) .. '\nDigite o novo comando:',
+                        'SALVAR', 'CANCELAR', 1)
+                end)
+            elseif acao == 2 then
+                lua_thread.create(function()
+                    wait(100)
+                    mostrarDialogoAuto(D_AUTO_EDITAR_TEMPO, 'SETOR AUTO - EDITAR TEMPO',
+                        'Atual: ' .. tostring(item.intervalo) .. ' segundos\nDigite o novo intervalo:',
+                        'SALVAR', 'CANCELAR', 1)
+                end)
+            elseif acao == 3 then
+                lua_thread.create(function()
+                    wait(100)
+                    mostrarDialogoAuto(D_AUTO_EXCLUIR, 'SETOR AUTO - EXCLUIR',
+                        'Excluir permanentemente?\n' .. tostring(item.comando),
+                        'EXCLUIR', 'CANCELAR', 0)
+                end)
+            end
+        end
+    elseif dialogId == D_AUTO_EDITAR_COMANDO then
+        local item = automacoesPersonalizadas[tonumber(autoSelecionada) or 0]
+        local comando = trim(input)
+        if confirmou and item and comando ~= '' and comando:sub(1, 1) == '/' then
+            item.comando = comando
+            salvarAutomacoesPersonalizadas()
+            chat('{3EDC81}', 'Comando atualizado.')
+            lua_thread.create(function() wait(100) abrirGerenciarAuto(autoSelecionada) end)
+        end
+    elseif dialogId == D_AUTO_EDITAR_TEMPO then
+        local item = automacoesPersonalizadas[tonumber(autoSelecionada) or 0]
+        local segundos = math.floor(tonumber(tostring(input or ''):match('%d+')) or 0)
+        if confirmou and item and segundos >= 5 then
+            item.intervalo = segundos
+            salvarAutomacoesPersonalizadas()
+            chat('{3EDC81}', 'Intervalo atualizado.')
+            lua_thread.create(function() wait(100) abrirGerenciarAuto(autoSelecionada) end)
+        end
+    elseif dialogId == D_AUTO_EXCLUIR then
+        if confirmou and automacoesPersonalizadas[tonumber(autoSelecionada) or 0] then
+            table.remove(automacoesPersonalizadas, tonumber(autoSelecionada))
+            autoSelecionada = nil
+            salvarAutomacoesPersonalizadas()
+            chat('{3EDC81}', 'Automacao excluida.')
+            lua_thread.create(function() wait(100) abrirSetorAuto() end)
+        end
+    end
+    return true
 end
 
 local function clean(s)
@@ -1647,6 +1832,10 @@ local function registrarComandos()
         end
         abrirModulos()
     end)
+    sampRegisterChatCommand('setorauto', function()
+        if not exigirStaff('/setorauto') then return end
+        abrirSetorAuto()
+    end)
     sampRegisterChatCommand('tvpainel', function()
         if not exigirStaff('/tvpainel') then return end
         if not painelTvFlutuante then return chat('{FFFF00}', 'Tele um jogador antes de abrir o Painel TV.') end
@@ -1864,6 +2053,9 @@ end
 _G.HZMobileProcessarRespostaReport = processarRespostaReport
 
 function samp.onSendDialogResponse(dialogId, button, listboxId, input)
+    if respostaSetorAuto(tonumber(dialogId) or -1, button, listboxId, input) then
+        return false
+    end
     if _G.HZMobileProcessarRespostaReport(dialogId, button, listboxId, input) then return end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
     if dialogId < D_MAIN or dialogId > D_SELETOR_COMANDO then return end
@@ -2116,6 +2308,7 @@ function samp.onSendCommand(command)
         emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
         saciarmeProximo = 0
+        automacoesProximas = {}
         return
     end
     -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
@@ -2319,6 +2512,7 @@ function main()
     while not isSampAvailable() do wait(100) end
     cache = carregarTabela(CACHE_FILE)
     monitorados = carregarTabela(MONITOR_FILE)
+    carregarAutomacoesPersonalizadas()
     registrarComandos()
     instalarPainelTvMimgui()
     chat('{3EDC81}', 'Mobile ' .. VERSION .. ' ativo. Use /la para identificar automaticamente nome e cargo.')
@@ -2332,6 +2526,22 @@ function main()
             and relogioAtendimento() >= saciarmeProximo then
             sampSendChat('/saciarme')
             saciarmeProximo = relogioAtendimento() + SACIARME_INTERVALO
+        end
+        if staffLogada then
+            local agoraAuto = os.time()
+            for indice, item in ipairs(automacoesPersonalizadas) do
+                if item.ativo ~= false and tostring(item.comando or '') ~= '' then
+                    local intervalo = math.max(5, math.floor(tonumber(item.intervalo) or 60))
+                    if not automacoesProximas[indice] then
+                        automacoesProximas[indice] = agoraAuto + intervalo
+                    elseif agoraAuto >= automacoesProximas[indice] then
+                        sampSendChat(tostring(item.comando))
+                        automacoesProximas[indice] = agoraAuto + intervalo
+                    end
+                end
+            end
+        elseif next(automacoesProximas) then
+            automacoesProximas = {}
         end
         local ok, erro = pcall(desenharPainelTvFlutuante)
         if not ok then
