@@ -544,10 +544,14 @@ local function paineltv_main()
     end)
 
     while true do
-        wait(0)
-        local okFilaTextdraw, erroFilaTextdraw = pcall(_G.HZProcessarFilaTextdraw)
-        if not okFilaTextdraw then
-            print("[SETOR] Falha segura na fila TextDraw: " .. tostring(erroFilaTextdraw))
+        -- 10 ms preserva a resposta dos atalhos e evita ocupar um ciclo inteiro
+        -- da CPU a cada frame quando o painel esta fechado.
+        wait(10)
+        if #(_G.HZFilaTextdraw or {}) > 0 then
+            local okFilaTextdraw, erroFilaTextdraw = pcall(_G.HZProcessarFilaTextdraw)
+            if not okFilaTextdraw then
+                print("[SETOR] Falha segura na fila TextDraw: " .. tostring(erroFilaTextdraw))
+            end
         end
 
         -- Hotkeys (opcionais)
@@ -1402,6 +1406,7 @@ local fontePrincipal, fonteTitulo, fonteAvisoSaida
 local font
 local tvNovatosAtivo = false
 local tvTodosAtivo = false
+local proximaAtualizacaoCatalogoNovatos = 0
 local VK_UP, VK_DOWN, VK_RIGHT, VK_LEFT = 0x26, 0x28, 0x27, 0x25
 local wasUpDown, wasDownDown, wasRightDown, wasLeftDown = false, false, false, false
 local rgCache = {}
@@ -1426,6 +1431,8 @@ local configSistema = {
     modsY = 180,
     modsModoSeguro = false,
     modsEscala = 1.0,
+    automacaoSaciarme = true,
+    automacaoMensagens = true,
     modulos = {
         painel_tv = true,
         navegacao_tv = true,
@@ -1599,6 +1606,8 @@ local function aplicarConfigSistema()
     -- Painel TV, atendimento, monitoramento ou seletores.
     configSistema.modsEscala = 1.0
     configSistema.modsModoSeguro = true
+    if configSistema.automacaoSaciarme == nil then configSistema.automacaoSaciarme = true end
+    if configSistema.automacaoMensagens == nil then configSistema.automacaoMensagens = true end
 end
 
 local function salvarConfigSistema(forcar)
@@ -2774,6 +2783,11 @@ local saciarmeInterval = 15 * 60
 local saciarmeNextTime = 0
 
 local function startStaffSaciarme()
+    if configSistema.automacaoSaciarme == false then
+        staffWorkActive = false
+        saciarmeNextTime = 0
+        return
+    end
     staffWorkActive = true
     -- Primeiro uso 30 segundos apos confirmar o login; os proximos seguem
     -- o intervalo normal de 15 minutos.
@@ -2853,6 +2867,13 @@ local function getNextAllowedSupportTime()
 end
 
 local function startStaffSupport(cargo)
+    if configSistema.automacaoMensagens == false then
+        staffSupportActive = false
+        staffSupportRole = nil
+        staffSupportIndex = 1
+        staffSupportNextTime = 0
+        return
+    end
     local role = getStaffSupportRole(cargo or cargoAdmin)
     if not role or not staffSupportData[role] then
         staffSupportActive = false
@@ -2907,12 +2928,14 @@ end
 function _G.HZAtualizarAutomacoesStaff()
     if not _G.HZModuloAtivo("automacoes_staff") then return end
 
-    if staffWorkActive and os.time() >= saciarmeNextTime then
+    if configSistema.automacaoSaciarme ~= false
+        and staffWorkActive and os.time() >= saciarmeNextTime then
         sampSendChat("/saciarme")
         saciarmeNextTime = os.time() + saciarmeInterval
     end
 
-    if staffSupportActive and os.time() >= staffSupportNextTime then
+    if configSistema.automacaoMensagens ~= false
+        and staffSupportActive and os.time() >= staffSupportNextTime then
         sendStaffSupportMessage()
     end
 end
@@ -3803,11 +3826,76 @@ end
 
 _G.HZDialogComandosId = 28991
 _G.HZDialogModsId = 28992
+_G.HZDialogAutomacoesId = 28993
 _G.HZModsCategorias = {
     { "PAINEIS", "Painel TV, atendimento e monitoramento.", { "painel_tv", "atendimento", "monitoramento" } },
     { "NAVEGACAO", "Atalhos para navegar entre jogadores.", { "navegacao_tv" } },
     { "FERRAMENTAS", "Camera e rotinas automaticas da staff.", { "camera_staff", "automacoes_staff" } }
 }
+
+function _G.HZAbrirPainelAutomacoes()
+    if not _G.HZExigirStaff("/automacoes") then return false end
+    if not _G.HZTemPermissaoModulo("automacoes_staff") then
+        local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
+        sampAddChatMessage("{FF6B6B}[AUTOMACOES] Recurso bloqueado para " .. cargoNome .. ".", -1)
+        return false
+    end
+    if _G.HZFecharPainelMods then _G.HZFecharPainelMods() end
+
+    local moduloGeral = _G.HZModuloAtivo("automacoes_staff")
+    local estadoSaciarme = configSistema.automacaoSaciarme ~= false and "ATIVO" or "DESATIVADO"
+    local estadoMensagens = configSistema.automacaoMensagens ~= false and "ATIVO" or "DESATIVADO"
+    local texto = table.concat({
+        "{48C6FF}/SACIARME AUTOMATICO  " ..
+            (estadoSaciarme == "ATIVO" and "{3EDC81}" or "{FFB347}") .. "[" .. estadoSaciarme ..
+            "] {A8B5C8}- 30 segundos; depois 15 em 15 minutos.",
+        "{48C6FF}MENSAGENS AUTOMATICAS  " ..
+            (estadoMensagens == "ATIVO" and "{3EDC81}" or "{FFB347}") .. "[" .. estadoMensagens ..
+            "] {A8B5C8}- Mensagens do cargo no /A.",
+        "{48C6FF}MODULO GERAL  " ..
+            (moduloGeral and "{3EDC81}[ATIVO]" or "{FF6B6B}[DESATIVADO]") ..
+            " {A8B5C8}- Liga ou desliga todas as automacoes."
+    }, "\n")
+    sampShowDialog(_G.HZDialogAutomacoesId,
+        "SETOR ADVANCED - AUTOMACOES STAFF",
+        texto, "ALTERAR", "FECHAR", 2)
+    if type(sampSetDialogClientside) == "function" then
+        sampSetDialogClientside(false)
+    end
+    return true
+end
+
+function _G.HZAlternarAutomacao(indice)
+    if not _G.HZTemPermissaoModulo("automacoes_staff") then return false end
+    if tonumber(indice) == 0 then
+        configSistema.automacaoSaciarme = configSistema.automacaoSaciarme == false
+        if configSistema.automacaoSaciarme and _G.HZModuloAtivo("automacoes_staff") then
+            startStaffSaciarme()
+        else
+            stopStaffSaciarme()
+        end
+        sampAddChatMessage((configSistema.automacaoSaciarme and
+            "{3EDC81}[AUTOMACOES] /saciarme automatico ativado." or
+            "{FFB347}[AUTOMACOES] /saciarme automatico desativado."), -1)
+    elseif tonumber(indice) == 1 then
+        configSistema.automacaoMensagens = configSistema.automacaoMensagens == false
+        if configSistema.automacaoMensagens and _G.HZModuloAtivo("automacoes_staff") then
+            startStaffSupport(cargoAdmin)
+        else
+            stopStaffSupport()
+        end
+        sampAddChatMessage((configSistema.automacaoMensagens and
+            "{3EDC81}[AUTOMACOES] Mensagens automaticas ativadas." or
+            "{FFB347}[AUTOMACOES] Mensagens automaticas desativadas."), -1)
+    elseif tonumber(indice) == 2 then
+        local novoEstado = not _G.HZModuloAtivo("automacoes_staff")
+        return _G.HZDefinirModulo("automacoes_staff", novoEstado)
+    else
+        return false
+    end
+    salvarConfigSistema(true)
+    return true
+end
 
 function _G.HZAbrirModsDialog(tela)
     tela = tela or "CATEGORIAS"
@@ -3870,6 +3958,7 @@ function _G.HZAbrirSetorComandos()
     local texto = table.concat({
         "{48C6FF}PAINEL E MODULOS",
         "{FFFFFF}/mods {A8B5C8}- Abre ou fecha a central de modulos.",
+        "{FFFFFF}/automacoes {A8B5C8}- Controla /saciarme e mensagens automaticas.",
         "{FFFFFF}/setorcomandos {A8B5C8}- Abre esta janela de ajuda.",
         "{FFFFFF}/tvz {A8B5C8}- Abre ou fecha manualmente o Painel TV.",
         "{FFFFFF}/kj {A8B5C8}- Liga ou desliga o cursor do Painel TV.",
@@ -3956,6 +4045,13 @@ function _G.HZDefinirModulo(id, ativo)
 
     salvarConfigSistema(true)
     return true
+end
+
+function _G.HZAcionarModuloPainel(id, ativoAtual)
+    if id == "automacoes_staff" then
+        return _G.HZAbrirPainelAutomacoes()
+    end
+    return _G.HZDefinirModulo(id, not ativoAtual)
 end
 
 -- Painel seguro para MoonLoader 0.26.x. Usa apenas componentes basicos do ImGui,
@@ -4061,7 +4157,7 @@ function _G.HZDesenharPainelModsCompat()
         local texto = titulo .. "\n" .. estado .. "\n" .. descricao .. "##lite_card_" .. id
         if ativo then imgui.PushStyleColor(imgui.Col.Button, UI_HZ.primary) end
         if imgui.Button(texto, imgui.ImVec2(largura, S(82))) and permitido then
-            _G.HZDefinirModulo(id, not ativo)
+            _G.HZAcionarModuloPainel(id, ativo)
         end
         if ativo then imgui.PopStyleColor() end
         if not umaColuna and i % 2 == 1 and i < #visiveis then imgui.SameLine() end
@@ -4242,7 +4338,7 @@ function _G.HZDesenharPainelMods()
         end
 
         if clicouCard then
-            if _G.HZDefinirModulo(id, not moduloAtivo) then
+            if _G.HZAcionarModuloPainel(id, moduloAtivo) and id ~= "automacoes_staff" then
                 sampAddChatMessage((not moduloAtivo and "{3EDC81}[MODS] Ativado: " or "{FF6B6B}[MODS] Desativado: ") .. titulo, -1)
             end
         end
@@ -4398,7 +4494,7 @@ function _G.HZDesenharPainelModsMimgui()
         local umaColuna = escala < 0.95
         local larguraCard = umaColuna and -1 or ms(258)
         if mi.Button(texto, mi.ImVec2(larguraCard, ms(92))) and permitido then
-            if _G.HZDefinirModulo(id, not ativo) then
+            if _G.HZAcionarModuloPainel(id, ativo) and id ~= "automacoes_staff" then
                 sampAddChatMessage((not ativo and "{3EDC81}[MODS] Ativado: " or
                     "{FF6B6B}[MODS] Desativado: ") .. titulo, -1)
             end
@@ -4868,6 +4964,10 @@ local function setor_main()
         _G.HZAbrirSetorComandos()
     end)
 
+    sampRegisterChatCommand("automacoes", function()
+        _G.HZAbrirPainelAutomacoes()
+    end)
+
     -- MUTE (COMANDO DIRETO - SETOR SEGURANÇA)
     sampRegisterChatCommand("mu", function(arg)
         if not _G.HZExigirStaff("/mu") then return end
@@ -5062,7 +5162,9 @@ local function setor_main()
 
     -- LOOP PRINCIPAL
     while true do
-        wait(0)
+        -- O sistema nao precisa executar milhares de verificacoes por segundo.
+        -- Um intervalo curto mantem a interface responsiva e reduz uso de CPU.
+        wait(10)
 
         -- Processa a captura Nome[RG] na thread principal, após o callback
         -- de rede terminar. Nunca varre a TAB diretamente em onServerMessage.
@@ -5101,7 +5203,10 @@ local function setor_main()
 
         if _G.HZModuloAtivo("monitoramento") then _G.HZMonitorEtapa1.atualizar() end
 
-        if _G.HZModuloAtivo("navegacao_tv") and tvNovatosAtivo then
+        local agoraLoop = os.clock and os.clock() or 0
+        if _G.HZModuloAtivo("navegacao_tv") and tvNovatosAtivo
+            and agoraLoop >= proximaAtualizacaoCatalogoNovatos then
+            proximaAtualizacaoCatalogoNovatos = agoraLoop + 0.5
             local lstN = getNovatosSorted()
             for _, id in ipairs(lstN) do addToCatalogN(id) end
         end
@@ -6253,7 +6358,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.04",
+    versao = "2.06",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
@@ -6474,6 +6579,17 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
     if tonumber(id) == tonumber(_G.HZDialogComandosId) then
         return false
     end
+    if tonumber(id) == tonumber(_G.HZDialogAutomacoesId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou then
+            _G.HZAlternarAutomacao(tonumber(listboxId))
+            lua_thread.create(function()
+                wait(100)
+                if _G.HZStaffLogada then _G.HZAbrirPainelAutomacoes() end
+            end)
+        end
+        return false
+    end
     if tonumber(id) == tonumber(_G.HZDialogModsId) then
         local confirmou = button == true or button == 1 or tostring(button) == "1"
         if confirmou then
@@ -6489,6 +6605,13 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
                     return false
                 end
                 local moduloId, titulo = item[1], item[2]
+                if moduloId == "automacoes_staff" then
+                    lua_thread.create(function()
+                        wait(100)
+                        if _G.HZStaffLogada then _G.HZAbrirPainelAutomacoes() end
+                    end)
+                    return false
+                end
                 if _G.HZTemPermissaoModulo(moduloId) then
                     local novoEstado = not _G.HZModuloAtivo(moduloId)
                     if _G.HZDefinirModulo(moduloId, novoEstado) then
