@@ -1,10 +1,16 @@
 -- SETOR SEGURANCA - ATUALIZADOR MOBILE INDEPENDENTE
 local requests = require 'requests'
 
-local VERSION_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/MOBILE/versao.txt'
-local SCRIPT_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/MOBILE/SETOR_SEGURANCA_MOBILE_COMPLETO.lua'
+local API_BASE = 'https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/MOBILE/'
+local VERSION_URL = API_BASE .. 'versao.txt?ref=main'
+local SCRIPT_URL = API_BASE .. 'SETOR_SEGURANCA_MOBILE_COMPLETO.lua?ref=main'
 local SCRIPT_NAME = 'SETOR_SEGURANCA_MOBILE_COMPLETO.lua'
 local atualizando = false
+local GITHUB_OPTIONS = {headers = {
+    ['Accept'] = 'application/vnd.github.raw+json',
+    ['User-Agent'] = 'Setor-Mobile-Updater',
+    ['X-GitHub-Api-Version'] = '2022-11-28'
+}}
 
 local function chat(cor, texto)
     if isSampAvailable() then sampAddChatMessage(cor .. '[SETOR UPDATE]: {FFFFFF}' .. tostring(texto), -1) end
@@ -17,7 +23,7 @@ end
 local function get(url)
     for tentativa = 1, 3 do
         local separador = url:find('?', 1, true) and '&' or '?'
-        local ok, res = pcall(requests.get, url .. separador .. 't=' .. tostring(os.time()) .. tostring(tentativa))
+        local ok, res = pcall(requests.get, url .. separador .. 't=' .. tostring(os.time()) .. tostring(tentativa), GITHUB_OPTIONS)
         local conteudo = ok and body(res) or nil
         if conteudo and #conteudo > 0 then return tostring(conteudo) end
         wait(600)
@@ -93,12 +99,33 @@ local function instalar(forcar, silencioso)
     end)
 end
 
+local function mostrarVersoes()
+    if atualizando then return chat('{FFFF00}', 'Atualizacao ja esta em andamento.') end
+    atualizando = true
+    lua_thread.create(function()
+        local instalada = versaoDoScript(ler(scriptPath())) or 'desconhecida'
+        chat('{48C6FF}', 'Versao mobile instalada: ' .. instalada)
+
+        local remota = get(VERSION_URL)
+        remota = remota and remota:match('([%d%.]+)') or nil
+        atualizando = false
+
+        if not remota then
+            return chat('{FF5555}', 'Nao foi possivel consultar a versao publicada.')
+        end
+
+        chat('{48C6FF}', 'Versao disponivel no GitHub: ' .. remota)
+        if instalada == 'desconhecida' or maior(remota, instalada) then
+            chat('{FFFF00}', 'Nova versao disponivel. Use /setoratualizar.')
+        else
+            chat('{3EDC81}', 'Seu SETOR Mobile esta atualizado.')
+        end
+    end)
+end
+
 function main()
     while not isSampAvailable() do wait(100) end
-    sampRegisterChatCommand('setorversao', function()
-        local v = versaoDoScript(ler(scriptPath())) or 'desconhecida'
-        chat('{48C6FF}', 'Versao mobile instalada: ' .. v)
-    end)
+    sampRegisterChatCommand('setorversao', mostrarVersoes)
     sampRegisterChatCommand('setoratualizar', function() instalar(true) end)
     sampRegisterChatCommand('setorrollback', function()
         local path, backup = scriptPath(), ler(scriptPath() .. '.bak')
