@@ -6179,7 +6179,7 @@ local function setor_onServerMessage(color, text)
                     if emAtendimento
                         and tostring(idJogadorAtendido) == tostring(id)
                         and tostring(nickJogadorAtendido):lower() == tostring(nome):lower() then
-                        sampSendChat("Ola, como posso ajudar?")
+                        sampSendChat("Ola, voce usou o comando /atendimento. Como posso ajudar?")
                     end
                 end)
             end
@@ -6521,7 +6521,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.20",
+    versao = "2.21",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
