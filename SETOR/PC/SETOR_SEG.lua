@@ -2907,9 +2907,9 @@ local function startStaffSupport(cargo)
     staffSupportRole = role
     staffSupportIndex = 1
     if isSupportAllowedTime() then
-        staffSupportNextTime = os.time() + 5 * 60
+        staffSupportNextTime = os.time() + 30
     else
-        staffSupportNextTime = getNextAllowedSupportTime() + 5 * 60
+        staffSupportNextTime = getNextAllowedSupportTime() + 30
     end
 end
 
@@ -2948,6 +2948,13 @@ end
 -- 60 upvalues do LuaJIT usado por esta versao do MoonLoader.
 function _G.HZAtualizarAutomacoesStaff()
     if not _G.HZModuloAtivo("automacoes_staff") then return end
+
+    -- Recupera automaticamente a rotina se o cargo foi identificado depois
+    -- do evento inicial de login ou se alguma recarga interrompeu o contador.
+    if _G.HZStaffLogada and configSistema.automacaoMensagens ~= false
+        and not staffSupportActive and getStaffSupportRole(cargoAdmin) then
+        startStaffSupport(cargoAdmin)
+    end
 
     if configSistema.automacaoSaciarme ~= false
         and staffWorkActive and os.time() >= saciarmeNextTime then
@@ -3898,6 +3905,12 @@ function _G.HZAbrirPainelAutomacoes()
         sampAddChatMessage("{FF6B6B}[AUTOMACOES] Recurso bloqueado para " .. cargoNome .. ".", -1)
         return false
     end
+    -- Este painel substituiu o antigo controle "Modulo Geral".
+    -- Ao gerenciar as automacoes, garante que o motor esteja habilitado.
+    if not _G.HZModuloAtivo("automacoes_staff") then
+        configSistema.modulos.automacoes_staff = true
+        salvarConfigSistema(true)
+    end
     if _G.HZFecharPainelMods then _G.HZFecharPainelMods() end
 
     local estadoSaciarme = configSistema.automacaoSaciarme ~= false and "ATIVO" or "DESATIVADO"
@@ -3965,6 +3978,12 @@ function _G.HZAbrirSetorAuto()
     if not _G.HZExigirStaff("/setorauto") then return false end
     if not _G.HZTemPermissaoModulo("automacoes_staff") then
         return sampAddChatMessage("{FF6B6B}[SETOR AUTO] Recurso bloqueado para seu cargo.", -1)
+    end
+    -- Criar/editar uma automacao implica habilitar o motor que executa
+    -- os contadores; evita configuracoes ATIVAS que nunca sao enviadas.
+    if not _G.HZModuloAtivo("automacoes_staff") then
+        configSistema.modulos.automacoes_staff = true
+        salvarConfigSistema(true)
     end
 
     local linhas = {"{3EDC81}[+] CRIAR NOVA AUTOMACAO"}
@@ -6502,7 +6521,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.18",
+    versao = "2.20",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
