@@ -3831,17 +3831,30 @@ function _G.HZDesenharVisualStaffPc()
                         local largura = type(renderGetFontDrawTextLength) == "function"
                             and renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, nome) or 0
                         if configSistema.modulos.visual_nomes ~= false then
+                            local nomeY = emVeiculo and (sy - 78) or (sy - 108)
                             renderFontDrawText(_G.HZVisualStaffFontePc, nome,
-                                sx - largura / 2, sy - 108, 0xFFFFFFFF)
+                                sx - largura / 2, nomeY, 0xFFFFFFFF)
                         end
 
-                        if nivel >= 2 and not emVeiculo
+                        if nivel >= 2
                             and (configSistema.modulos.visual_status ~= false
-                                or configSistema.modulos.visual_arma ~= false) then
-                            local vida = type(getCharHealth) == "function"
-                                and math.max(0, math.floor(tonumber(getCharHealth(ped)) or 0)) or 0
-                            local colete = type(getCharArmour) == "function"
-                                and math.max(0, math.floor(tonumber(getCharArmour(ped)) or 0)) or 0
+                                or (not emVeiculo
+                                    and configSistema.modulos.visual_arma ~= false)) then
+                            local vida, colete = 0, 0
+                            if type(sampGetPlayerHealth) == "function" then
+                                local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
+                                if okVida then vida = tonumber(valorVida) or 0 end
+                            elseif type(getCharHealth) == "function" then
+                                vida = tonumber(getCharHealth(ped)) or 0
+                            end
+                            if type(sampGetPlayerArmor) == "function" then
+                                local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
+                                if okColete then colete = tonumber(valorColete) or 0 end
+                            elseif type(getCharArmour) == "function" then
+                                colete = tonumber(getCharArmour(ped)) or 0
+                            end
+                            vida = math.max(0, math.floor(vida))
+                            colete = math.max(0, math.floor(colete))
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if configSistema.modulos.visual_status ~= false then
@@ -3852,12 +3865,13 @@ function _G.HZDesenharVisualStaffPc()
                                 local larguraColete =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
                                 local inicio = sx - (larguraVida + 8 + larguraColete) / 2
+                                local statusY = emVeiculo and (sy - 64) or (sy - 94)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
-                                    inicio, sy - 94, 0xFFE74C3C)
+                                    inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
-                                    inicio + larguraVida + 8, sy - 94, 0xFFFFFFFF)
+                                    inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
                             end
-                            if configSistema.modulos.visual_arma ~= false then
+                            if not emVeiculo and configSistema.modulos.visual_arma ~= false then
                                 local armaTexto = _G.HZNomesArmasVisualPc[armaId]
                                     or ("Arma " .. tostring(armaId))
                                 local larguraArma =
@@ -6722,7 +6736,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.27",
+    versao = "2.29",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
