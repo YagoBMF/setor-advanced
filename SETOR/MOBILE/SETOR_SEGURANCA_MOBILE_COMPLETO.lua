@@ -2,12 +2,15 @@
 -- Baseado na versao mobile validada e nas funcoes da versao PC.
 
 local samp = require 'samp.events'
-local requests = require 'requests'
+local REQUESTS_OK, requests = pcall(require, 'requests')
+if not REQUESTS_OK or type(requests) ~= 'table' then
+    REQUESTS_OK, requests = false, nil
+end
 local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.59'
+local VERSION = '3.61'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -49,7 +52,8 @@ local cfg = inicfg.load({
     },
     modulos = {
         painel_tv = true, navegacao_tv = true,
-        monitoramento = true, acoes_staff = true, atendimento = true, logs = true
+        monitoramento = true, acoes_staff = true, atendimento = true,
+        automacoes_staff = true, logs = true
     },
     automacoes = { total = 0 }
 }, CONFIG_FILE)
@@ -97,6 +101,7 @@ if cfg.modulos.acoes_staff == nil then cfg.modulos.acoes_staff = cfg.modulos.ata
 if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
 if cfg.modulos.monitoramento == nil then cfg.modulos.monitoramento = true end
 if cfg.modulos.atendimento == nil then cfg.modulos.atendimento = true end
+if cfg.modulos.automacoes_staff == nil then cfg.modulos.automacoes_staff = true end
 -- Logs sao obrigatorios para toda a staff e nao podem ser desativados.
 cfg.modulos.logs = true
 inicfg.save(cfg, CONFIG_FILE)
@@ -483,13 +488,14 @@ local MODULOS_INFO = {
     painel_tv = {'PAINEL TV', 'Telagem, status e menu TV.', 2},
     navegacao_tv = {'NAVEGACAO TV', 'Selecao e atalhos entre jogadores.', 2},
     monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
-    acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3}
+    acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3},
+    automacoes_staff = {'AUTOMACOES STAFF', 'Ativa ou pausa todos os anuncios do /setorauto.', 1}
 }
 
 local MODULOS_CATEGORIAS = {
     {'PAINEIS', 'Atendimento rapido, Painel TV e punicoes.', {'atendimento', 'painel_tv'}},
     {'NAVEGACAO', 'Selecao e navegacao de jogadores.', {'navegacao_tv'}},
-    {'FERRAMENTAS', 'Monitoramento e acoes administrativas.', {'monitoramento', 'acoes_staff'}}
+    {'FERRAMENTAS', 'Monitoramento, acoes e automacoes.', {'monitoramento', 'acoes_staff', 'automacoes_staff'}}
 }
 
 local function moduloPermitido(id)
@@ -531,6 +537,7 @@ local function versaoMaior(remota, localAtual)
 end
 
 local function obterVersaoRemota()
+    if not REQUESTS_OK then return nil end
     local ok, res = pcall(requests.get, UPDATE_VERSION_URL, UPDATE_GITHUB_OPTIONS)
     if not ok then return nil end
     local body = responseBody(res)
@@ -546,6 +553,12 @@ local function caminhoDoScript()
 end
 
 local function verificarAtualizacao(silencioso)
+    if not REQUESTS_OK then
+        if not silencioso then
+            chat('{FFAA00}', 'Consulta indisponivel: biblioteca requests/cjson ausente.')
+        end
+        return
+    end
     lua_thread.create(function()
         local remota = obterVersaoRemota()
         if not remota then
@@ -562,6 +575,9 @@ end
 
 
 local function instalarAtualizacao()
+    if not REQUESTS_OK then
+        return chat('{FF5555}', 'Nao foi possivel atualizar: instale requests e cjson.safe no MonetLoader.')
+    end
     lua_thread.create(function()
         chat('{48C6FF}', 'Baixando atualizacao do GitHub...')
         local remota = obterVersaoRemota()
@@ -638,6 +654,10 @@ end
 
 local function post(url, mensagem, retorno)
     if not moduloAtivo('logs') then return end
+    if not REQUESTS_OK then
+        if retorno then chat('{FFAA00}', 'Discord indisponivel: biblioteca requests/cjson ausente.') end
+        return
+    end
     lua_thread.create(function()
         local ok, res = pcall(requests.post, url, {
             data = '{"content":"' .. jsonEscape(mensagem) .. '"}',
@@ -1264,7 +1284,7 @@ local function mostrarAjuda()
     chat('{48C6FF}', '/tvn /tvnvoltar (novatos) | /tva /tavoltar (todos) | /tvoff')
     chat('{48C6FF}', '/setorir RG | /setortrazer RG | /setorvida RG valor | /setorcolete RG valor')
     chat('{48C6FF}', '/setorreviver RG | /setorcongelar RG | /setordescongelar RG | /setorarmas RG')
-    chat('{48C6FF}', '/mods | /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
+    chat('{48C6FF}', '/mods | /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff|automacoes_staff on|off')
 end
 
 local function dialogo(id, titulo, texto, botao1, botao2, estilo)
@@ -1862,7 +1882,7 @@ local function registrarComandos()
         if nome == 'atalhos' then nome = 'acoes_staff' end
         if nome == 'logs' then return chat('{FF5555}', 'Logs sao obrigatorios e permanecem sempre ativos.') end
         if not nome or not MODULOS_INFO[nome] then
-            return chat('{FFFF00}', 'Use /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
+            return chat('{FFFF00}', 'Use /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff|automacoes_staff on|off')
         end
         if not moduloPermitido(nome) then return chat('{FF5555}', 'Modulo bloqueado para o seu cargo.') end
         cfg.modulos[nome] = estado == 'on'
@@ -2516,6 +2536,9 @@ function main()
     registrarComandos()
     instalarPainelTvMimgui()
     chat('{3EDC81}', 'Mobile ' .. VERSION .. ' ativo. Use /la para identificar automaticamente nome e cargo.')
+    if not REQUESTS_OK then
+        chat('{FFAA00}', 'Modo compativel: requests/cjson ausente. Paineis funcionam; Discord e update interno ficam indisponiveis.')
+    end
     chat('{A8B5C8}', '/configadm fica disponivel somente como configuracao de emergencia.')
     -- No Android, algumas builds do MonetLoader fecham o processo durante
     -- requisicoes automaticas na inicializacao. A atualizacao fica somente
@@ -2527,7 +2550,7 @@ function main()
             sampSendChat('/saciarme')
             saciarmeProximo = relogioAtendimento() + SACIARME_INTERVALO
         end
-        if staffLogada then
+        if staffLogada and moduloAtivo('automacoes_staff') then
             local agoraAuto = os.time()
             for indice, item in ipairs(automacoesPersonalizadas) do
                 if item.ativo ~= false and tostring(item.comando or '') ~= '' then
