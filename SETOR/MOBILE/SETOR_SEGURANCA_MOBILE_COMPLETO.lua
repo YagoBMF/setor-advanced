@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.82'
+local VERSION = '3.83'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1092,13 +1092,15 @@ local function desenharVisualStaff()
                             end
                             vida = math.max(0, math.floor(vida))
                             colete = math.max(0, math.floor(colete))
+                            -- Vida e colete usam apenas os dados sincronizados do
+                            -- jogador. TextDraws podem ficar antigos e não devem
+                            -- substituir esses valores. Capacete ainda depende do
+                            -- TextDraw, pois não faz parte dos dados padrão do SA-MP.
                             local capacete = nil
                             local statsTd = visualTextdrawAtual
                             if tonumber(statsTd.id) == tonumber(item.id)
                                 and tostring(statsTd.nick or ''):lower()
                                     == tostring(sampGetPlayerNickname(item.id) or ''):lower() then
-                                if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
-                                if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
                                 capacete = tonumber(statsTd.capacete)
                             end
                             local armaId = type(getCurrentCharWeapon) == 'function'
