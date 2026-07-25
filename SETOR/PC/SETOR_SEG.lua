@@ -1451,14 +1451,19 @@ local configSistema = {
         atendimento = true,
         camera_staff = true,
         automacoes_staff = true,
-        visual_staff = false
+        visual_staff = false,
+        visual_nomes = true,
+        visual_id = false,
+        visual_status = true,
+        visual_arma = true
     }
 }
 
 _G.HZModulosPadrao = {
     painel_tv = true, navegacao_tv = true, monitoramento = true,
     atendimento = true, camera_staff = true, automacoes_staff = true,
-    visual_staff = false
+    visual_staff = false, visual_nomes = true, visual_id = false, visual_status = true,
+    visual_arma = true
 }
 
 _G.HZPermissaoMinimaModulo = {
@@ -1468,7 +1473,7 @@ _G.HZPermissaoMinimaModulo = {
     monitoramento = 3,
     camera_staff = 3,
     automacoes_staff = 1,
-    visual_staff = 2
+    visual_staff = 1
 }
 
 -- Alguns servidores repetem a confirmacao de login administrativo em eventos
@@ -3789,6 +3794,7 @@ function _G.HZDesenharVisualStaffPc()
 
     local px, py, pz = getCharCoordinates(PLAYER_PED)
     local nivel = _G.HZNivelCargo(cargoAdmin)
+    local posicoesVeiculoNaTela = {}
     for _, item in ipairs(_G.HZVisualStaffJogadoresPc) do
         if sampIsPlayerConnected(item.id) then
             local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
@@ -3796,29 +3802,69 @@ function _G.HZDesenharVisualStaffPc()
                 local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 500 then
-                    local sx, sy = convert3DCoordsToScreen(x, y, z + 1.15)
+                    local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
+                    local pontoX, pontoY, pontoZ = x, y, z + 1.10
+                    if emVeiculo and type(getOffsetFromCharInWorldCoords) == "function" then
+                        local okPonto, ox, oy, oz = pcall(
+                            getOffsetFromCharInWorldCoords, ped, 0.0, 0.0, 1.15)
+                        if okPonto and ox and oy and oz then
+                            pontoX, pontoY, pontoZ = ox, oy, oz
+                        end
+                    end
+                    local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
                     if sx and sy then
+                        if emVeiculo then
+                            local deslocamento = 0
+                            for _, posicao in ipairs(posicoesVeiculoNaTela) do
+                                if math.abs(sx - posicao.x) < 45
+                                    and math.abs((sy + deslocamento) - posicao.y) < 14 then
+                                    deslocamento = deslocamento - 16
+                                end
+                            end
+                            sy = sy + deslocamento
+                            posicoesVeiculoNaTela[#posicoesVeiculoNaTela + 1] = {x=sx, y=sy}
+                        end
                         local nome = tostring(sampGetPlayerNickname(item.id) or "?")
-                            .. " (" .. tostring(item.id) .. ")"
+                        if configSistema.modulos.visual_id ~= false then
+                            nome = nome .. " (" .. tostring(item.id) .. ")"
+                        end
                         local largura = type(renderGetFontDrawTextLength) == "function"
                             and renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, nome) or 0
-                        renderFontDrawText(_G.HZVisualStaffFontePc, nome,
-                            sx - largura / 2, sy - 22, 0xFFFFFFFF)
+                        if configSistema.modulos.visual_nomes ~= false then
+                            renderFontDrawText(_G.HZVisualStaffFontePc, nome,
+                                sx - largura / 2, sy - 88, 0xFFFFFFFF)
+                        end
 
-                        if nivel >= 3 then
+                        if nivel >= 2 and not emVeiculo
+                            and (configSistema.modulos.visual_status ~= false
+                                or configSistema.modulos.visual_arma ~= false) then
                             local vida = type(getCharHealth) == "function"
                                 and math.max(0, math.floor(tonumber(getCharHealth(ped)) or 0)) or 0
                             local colete = type(getCharArmour) == "function"
                                 and math.max(0, math.floor(tonumber(getCharArmour(ped)) or 0)) or 0
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            local detalhes = string.format("Vida: %d | Colete: %d | %s",
-                                vida, colete,
-                                _G.HZNomesArmasVisualPc[armaId] or ("Arma " .. tostring(armaId)))
-                            local larguraDetalhes = type(renderGetFontDrawTextLength) == "function"
-                                and renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, detalhes) or 0
-                            renderFontDrawText(_G.HZVisualStaffFontePc, detalhes,
-                                sx - larguraDetalhes / 2, sy - 8, 0xFFFFFFFF)
+                            if configSistema.modulos.visual_status ~= false then
+                                local vidaTexto = tostring(math.min(100, vida)) .. "%"
+                                local coleteTexto = tostring(math.min(100, colete)) .. "%"
+                                local larguraVida =
+                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, vidaTexto)
+                                local larguraColete =
+                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
+                                local inicio = sx - (larguraVida + 8 + larguraColete) / 2
+                                renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
+                                    inicio, sy - 74, 0xFFE74C3C)
+                                renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
+                                    inicio + larguraVida + 8, sy - 74, 0xFFFFFFFF)
+                            end
+                            if configSistema.modulos.visual_arma ~= false then
+                                local armaTexto = _G.HZNomesArmasVisualPc[armaId]
+                                    or ("Arma " .. tostring(armaId))
+                                local larguraArma =
+                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, armaTexto)
+                                renderFontDrawText(_G.HZVisualStaffFontePc, armaTexto,
+                                    sx - larguraArma / 2, sy - 60, 0xFFFFFFFF)
+                            end
                         end
                     end
                 end
@@ -3870,7 +3916,7 @@ _G.HZModulosUI = {
     { "atendimento", "ATENDIMENTO", "Cronometro visual de suporte." },
     { "camera_staff", "CAMERA STAFF", "Camera livre e comandos staff." },
     { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." },
-    { "visual_staff", "VISUAL STAFF", "Nomes ate 500m; Adm+ ve vida, colete e arma." }
+    { "visual_staff", "VISUAL STAFF", "Exibe informacoes dos players." }
 }
 
 function _G.HZEscalaMods()
@@ -3963,6 +4009,7 @@ _G.HZDialogAutoGerenciarId = 28997
 _G.HZDialogAutoEditarComandoId = 28998
 _G.HZDialogAutoEditarTempoId = 28999
 _G.HZDialogAutoExcluirId = 29000
+_G.HZDialogVisualStaffId = 29001
 _G.HZAutoDialogSelecionado = nil
 _G.HZAutoNovoComando = nil
 _G.HZModsCategorias = {
@@ -4188,6 +4235,32 @@ function _G.HZAbrirModsDialog(tela)
         sampSetDialogClientside(false)
     end
 end
+
+function _G.HZAbrirVisualStaffDialog()
+    if not _G.HZStaffLogada then return end
+    local nivel = _G.HZNivelCargo(cargoAdmin)
+    local linhas, ids = {}, {}
+    local function adicionar(id, titulo)
+        ids[#ids + 1] = id
+        local ativo = configSistema.modulos[id] ~= false
+        linhas[#linhas + 1] = string.format("{FFFFFF}%s  %s[%s]",
+            titulo, ativo and "{3EDC81}" or "{FFB347}",
+            ativo and "ATIVO" or "DESATIVADO")
+    end
+    adicionar("visual_staff", "ATIVAR VISUAL STAFF")
+    adicionar("visual_nomes", "NOMES")
+    adicionar("visual_id", "ID")
+    if nivel >= 2 then
+        adicionar("visual_status", "VIDA E COLETE")
+        adicionar("visual_arma", "ARMA")
+    end
+    _G.HZVisualStaffDialogItens = ids
+    sampShowDialog(_G.HZDialogVisualStaffId, "SETOR ADVANCED | VISUAL STAFF",
+        table.concat(linhas, "\n"), "ALTERAR", "VOLTAR", 2)
+    if type(sampSetDialogClientside) == "function" then
+        sampSetDialogClientside(false)
+    end
+end
 function _G.HZAbrirSetorComandos()
     local texto = table.concat({
         "{48C6FF}PAINEL E MODULOS",
@@ -4286,6 +4359,10 @@ function _G.HZAcionarModuloPainel(id, ativoAtual)
     if id == "automacoes_staff" then
         return _G.HZAbrirPainelAutomacoes()
     end
+    if id == "visual_staff" then
+        _G.HZFecharPainelMods()
+        return _G.HZAbrirVisualStaffDialog()
+    end
     return _G.HZDefinirModulo(id, not ativoAtual)
 end
 
@@ -4377,7 +4454,7 @@ function _G.HZDesenharPainelModsCompat()
             or (_G.HZModsPagina == "PAINEIS" and
                 (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
             or (_G.HZModsPagina == "FERRAMENTAS" and
-                (id == "camera_staff" or id == "automacoes_staff"))) then
+                (id == "camera_staff" or id == "visual_staff" or id == "automacoes_staff"))) then
             visiveis[#visiveis + 1] = item
         end
     end
@@ -4523,7 +4600,7 @@ function _G.HZDesenharPainelMods()
             or (_G.HZModsPagina == "PAINEIS" and
                 (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
             or (_G.HZModsPagina == "FERRAMENTAS" and
-                (id == "camera_staff" or id == "automacoes_staff")))
+                (id == "camera_staff" or id == "visual_staff" or id == "automacoes_staff")))
         if mostrar then table.insert(itensPagina, item) end
     end
 
@@ -4710,7 +4787,7 @@ function _G.HZDesenharPainelModsMimgui()
             or (_G.HZModsPagina == "PAINEIS" and
                 (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
             or (_G.HZModsPagina == "FERRAMENTAS" and
-                (id == "camera_staff" or id == "automacoes_staff"))) then
+                (id == "camera_staff" or id == "visual_staff" or id == "automacoes_staff"))) then
             visiveis[#visiveis + 1] = item
         end
     end
@@ -6645,7 +6722,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.24",
+    versao = "2.26",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7062,6 +7139,27 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
         end
         return false
     end
+    if tonumber(id) == tonumber(_G.HZDialogVisualStaffId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou then
+            local indice = (tonumber(listboxId) or -1) + 1
+            local opcao = (_G.HZVisualStaffDialogItens or {})[indice]
+            if opcao then
+                configSistema.modulos[opcao] = configSistema.modulos[opcao] == false
+                salvarConfigSistema(true)
+            end
+            lua_thread.create(function()
+                wait(100)
+                if _G.HZStaffLogada then _G.HZAbrirVisualStaffDialog() end
+            end)
+        else
+            lua_thread.create(function()
+                wait(100)
+                if _G.HZStaffLogada then _G.HZAbrirModsDialog("FERRAMENTAS") end
+            end)
+        end
+        return false
+    end
     if tonumber(id) == tonumber(_G.HZDialogModsId) then
         local confirmou = button == true or button == 1 or tostring(button) == "1"
         if confirmou then
@@ -7081,6 +7179,13 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
                     lua_thread.create(function()
                         wait(100)
                         if _G.HZStaffLogada then _G.HZAbrirPainelAutomacoes() end
+                    end)
+                    return false
+                end
+                if moduloId == "visual_staff" then
+                    lua_thread.create(function()
+                        wait(100)
+                        if _G.HZStaffLogada then _G.HZAbrirVisualStaffDialog() end
                     end)
                     return false
                 end
