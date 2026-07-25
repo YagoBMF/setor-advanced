@@ -3831,7 +3831,7 @@ function _G.HZDesenharVisualStaffPc()
                         local largura = type(renderGetFontDrawTextLength) == "function"
                             and renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, nome) or 0
                         if configSistema.modulos.visual_nomes ~= false then
-                            local nomeY = emVeiculo and (sy - 78) or (sy - 108)
+                            local nomeY = emVeiculo and (sy - 71) or (sy - 101)
                             renderFontDrawText(_G.HZVisualStaffFontePc, nome,
                                 sx - largura / 2, nomeY, 0xFFFFFFFF)
                         end
@@ -3865,7 +3865,7 @@ function _G.HZDesenharVisualStaffPc()
                                 local larguraColete =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
                                 local inicio = sx - (larguraVida + 8 + larguraColete) / 2
-                                local statusY = emVeiculo and (sy - 64) or (sy - 94)
+                                local statusY = emVeiculo and (sy - 57) or (sy - 87)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
                                     inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
@@ -3877,7 +3877,7 @@ function _G.HZDesenharVisualStaffPc()
                                 local larguraArma =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, armaTexto)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, armaTexto,
-                                    sx - larguraArma / 2, sy - 80, 0xFFFFFFFF)
+                                    sx - larguraArma / 2, sy - 73, 0xFFFFFFFF)
                             end
                         end
                     end
@@ -6736,7 +6736,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.29",
+    versao = "2.30",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
