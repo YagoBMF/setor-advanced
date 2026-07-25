@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.86'
+local VERSION = '3.87'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1058,44 +1058,20 @@ local function desenharVisualStaff()
                         end
 
                         if mostrarStatus or mostrarArma then
+                            -- Mesma fonte usada pelo Wall_Hack mobile validado:
+                            -- ler diretamente pelo ID SA-MP, sem misturar com o
+                            -- ped local nem sobrescrever por TextDraw.
                             local vida, colete = 0, 0
-                            local vidaSamp, vidaPed, coleteSamp, coletePed
                             if type(sampGetPlayerHealth) == 'function' then
                                 local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
-                                if okVida then vidaSamp = tonumber(valorVida) end
-                            end
-                            if type(getCharHealth) == 'function' then
-                                local okVidaPed, valorVidaPed = pcall(getCharHealth, ped)
-                                if okVidaPed then vidaPed = tonumber(valorVidaPed) end
+                                if okVida then vida = tonumber(valorVida) or 0 end
                             end
                             if type(sampGetPlayerArmor) == 'function' then
                                 local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
-                                if okColete then coleteSamp = tonumber(valorColete) end
+                                if okColete then colete = tonumber(valorColete) or 0 end
                             end
-                            if type(getCharArmour) == 'function' then
-                                local okColetePed, valorColetePed = pcall(getCharArmour, ped)
-                                if okColetePed then coletePed = tonumber(valorColetePed) end
-                            end
-                            vida = vidaSamp or vidaPed or 0
-                            colete = coleteSamp or coletePed or 0
-                            if (vidaSamp and vidaSamp > 100) or (vidaPed and vidaPed > 100) then
-                                vida = math.max(vidaSamp or 0, vidaPed or 0)
-                            end
-                            if (coleteSamp and coleteSamp > 100)
-                                or (coletePed and coletePed > 100) then
-                                colete = math.max(coleteSamp or 0, coletePed or 0)
-                            end
-                            -- Algumas builds mantem a leitura SA-MP travada em
-                            -- 100. Nesse caso, o ped sincronizado e mais fiel.
-                            if vidaSamp == 100 and vidaPed and vidaPed >= 0 and vidaPed < 100 then
-                                vida = vidaPed
-                            end
-                            if coleteSamp == 100 and coletePed
-                                and coletePed >= 0 and coletePed < 100 then
-                                colete = coletePed
-                            end
-                            vida = math.max(0, math.floor(vida))
-                            colete = math.max(0, math.floor(colete))
+                            vida = math.max(0, math.floor(vida + 0.5))
+                            colete = math.max(0, math.floor(colete + 0.5))
                             -- Vida e colete usam apenas os dados sincronizados do
                             -- jogador. TextDraws podem ficar antigos e não devem
                             -- substituir esses valores. Capacete ainda depende do
@@ -1105,13 +1081,6 @@ local function desenharVisualStaff()
                             if tonumber(statsTd.id) == tonumber(item.id)
                                 and tostring(statsTd.nick or ''):lower()
                                     == tostring(sampGetPlayerNickname(item.id) or ''):lower() then
-                                -- Valores reconstruidos pelo par rotulo/valor do
-                                -- painel do servidor sao mais confiaveis no Android
-                                -- que a estrutura de vida do MonetLoader.
-                                if statsTd.fonteSeparada == true then
-                                    if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
-                                    if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
-                                end
                                 capacete = tonumber(statsTd.capacete)
                             end
                             local armaId = type(getCurrentCharWeapon) == 'function'
