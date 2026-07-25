@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.68'
+local VERSION = '3.69'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -954,6 +954,7 @@ local function desenharVisualStaff()
 
     local px, py, pz = getCharCoordinates(PLAYER_PED)
     local nivel = nivelCargo(cfg.dados.cargo)
+    local posicoesVeiculoNaTela = {}
     for _, item in ipairs(visualStaffJogadores) do
         if sampIsPlayerConnected(item.id) then
             local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
@@ -963,8 +964,29 @@ local function desenharVisualStaff()
                 local distancia = math.sqrt(dx * dx + dy * dy + dz * dz)
                 if distancia <= 500 then
                     local emVeiculo = type(isCharInAnyCar) == 'function' and isCharInAnyCar(ped)
-                    local sx, sy = convert3DCoordsToScreen(x, y, z + 1.10)
+                    local pontoX, pontoY, pontoZ = x, y, z + 1.10
+                    if emVeiculo and type(getOffsetFromCharInWorldCoords) == 'function' then
+                        local okPonto, ox, oy, oz = pcall(
+                            getOffsetFromCharInWorldCoords, ped, 0.0, 0.0, 1.15)
+                        if okPonto and ox and oy and oz then
+                            pontoX, pontoY, pontoZ = ox, oy, oz
+                        end
+                    end
+                    local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
                     if sx and sy then
+                        -- Certas DATAs devolvem a mesma matriz para todos os
+                        -- passageiros. Se isso ocorrer, separa os nomes na tela.
+                        if emVeiculo then
+                            local deslocamento = 0
+                            for _, posicao in ipairs(posicoesVeiculoNaTela) do
+                                if math.abs(sx - posicao.x) < 45
+                                    and math.abs((sy + deslocamento) - posicao.y) < 14 then
+                                    deslocamento = deslocamento - 16
+                                end
+                            end
+                            sy = sy + deslocamento
+                            posicoesVeiculoNaTela[#posicoesVeiculoNaTela + 1] = {x=sx, y=sy}
+                        end
                         local nick = tostring(sampGetPlayerNickname(item.id) or '?')
                         local cor = 0xFFFFFFFF
                         local largura = type(renderGetFontDrawTextLength) == 'function'
