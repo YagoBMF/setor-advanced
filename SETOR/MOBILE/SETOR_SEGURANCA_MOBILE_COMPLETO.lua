@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.63'
+local VERSION = '3.64'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -965,7 +965,7 @@ local function desenharVisualStaff()
                         local cor = 0xFFFFFFFF
                         local largura = type(renderGetFontDrawTextLength) == 'function'
                             and renderGetFontDrawTextLength(visualStaffFonte, nick) or 0
-                        renderFontDrawText(visualStaffFonte, nick, sx - largura / 2, sy - 22, cor)
+                        renderFontDrawText(visualStaffFonte, nick, sx - largura / 2, sy - 7, cor)
 
                         if nivel >= 3 then
                             local vida = type(getCharHealth) == 'function'
@@ -979,7 +979,7 @@ local function desenharVisualStaff()
                             local larguraDetalhes = type(renderGetFontDrawTextLength) == 'function'
                                 and renderGetFontDrawTextLength(visualStaffFonte, detalhes) or 0
                             renderFontDrawText(visualStaffFonte, detalhes,
-                                sx - larguraDetalhes / 2, sy - 8, 0xFFFFFFFF)
+                                sx - larguraDetalhes / 2, sy + 7, 0xFFFFFFFF)
                         end
                     end
                 end
