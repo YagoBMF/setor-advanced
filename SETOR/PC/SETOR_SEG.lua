@@ -1224,6 +1224,24 @@ local function paineltv_parse_info(text)
     local r = clean:match("RG:%s*(%d+)")
     local i = clean:match("ID:%s*(%d+)")
     local lvl = clean:match("LEVEL:%s*(%d+)") or clean:match("Level:%s*(%d+)")
+    _G.HZVisualTextdrawAtual = _G.HZVisualTextdrawAtual
+        or {id=nil, nick=nil, vida=nil, colete=nil, capacete=nil, arma=nil}
+    local vidaTd = clean:match("[Vv][Ii][Dd][Aa][:%s]+([%d%.]+)")
+    local coleteTd = clean:match("[Cc][Oo][Ll][Ee][Tt][Ee][:%s]+([%d%.]+)")
+    local capaceteTd = clean:match("[Cc][Aa][Pp][Aa][Cc][Ee][Tt][Ee][:%s]+([%d%.]+)")
+    local armaTd = clean:match("[Aa][Rr][Mm][Aa][:%s]+([%w%s_%-]+)")
+    if vidaTd or coleteTd or capaceteTd or armaTd then
+        local idTd = tonumber(i or idTelado)
+        local nickTd = tostring(n or nickTelado or "")
+        if tonumber(_G.HZVisualTextdrawAtual.id) ~= idTd
+            or tostring(_G.HZVisualTextdrawAtual.nick or ""):lower() ~= nickTd:lower() then
+            _G.HZVisualTextdrawAtual = {id=idTd, nick=nickTd}
+        end
+        if vidaTd then _G.HZVisualTextdrawAtual.vida = tonumber(vidaTd) end
+        if coleteTd then _G.HZVisualTextdrawAtual.colete = tonumber(coleteTd) end
+        if capaceteTd then _G.HZVisualTextdrawAtual.capacete = tonumber(capaceteTd) end
+        if armaTd then _G.HZVisualTextdrawAtual.arma = armaTd:match("^%s*(.-)%s*$") end
+    end
 
     if n then nickTelado = n end
     if r then rgTelado = r end
@@ -3804,11 +3822,48 @@ function _G.HZDesenharVisualStaffPc()
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 750 then
                     local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
-                    if emVeiculo and type(getOffsetFromCharInWorldCoords) == "function" then
-                        local okPonto, ox, oy, oz = pcall(
-                            getOffsetFromCharInWorldCoords, ped, 0.0, 0.0, 1.15)
-                        if okPonto and ox and oy and oz then
-                            pontoX, pontoY, pontoZ = ox, oy, oz
+                    if emVeiculo then
+                        local carro, assento = nil, nil
+                        if type(storeCarCharIsInNoSave) == "function" then
+                            local okCarro, valorCarro = pcall(storeCarCharIsInNoSave, ped)
+                            if okCarro then carro = valorCarro end
+                        end
+                        if carro and type(getDriverOfCar) == "function" then
+                            local okMotorista, motorista = pcall(getDriverOfCar, carro)
+                            if okMotorista and motorista == ped then assento = -1 end
+                        end
+                        if carro and assento == nil
+                            and type(getCharInCarPassengerSeat) == "function" then
+                            for indiceAssento = 0, 7 do
+                                local okLugar, ocupante = pcall(
+                                    getCharInCarPassengerSeat, carro, indiceAssento)
+                                if okLugar and ocupante == ped then
+                                    assento = indiceAssento
+                                    break
+                                end
+                            end
+                        end
+                        if carro and assento ~= nil
+                            and type(getOffsetFromCarInWorldCoords) == "function" then
+                            local posicoes = {
+                                [-1]={-0.62, 0.28, 1.35}, [0]={0.62, 0.28, 1.35},
+                                [1]={-0.62, -0.62, 1.35}, [2]={0.62, -0.62, 1.35},
+                                [3]={-0.62, -1.25, 1.35}, [4]={0.62, -1.25, 1.35}
+                            }
+                            local pos = posicoes[assento]
+                                or {(assento % 2 == 0) and 0.62 or -0.62,
+                                    -1.25 - math.floor(assento / 2) * 0.55, 1.35}
+                            local okPonto, ox, oy, oz = pcall(
+                                getOffsetFromCarInWorldCoords, carro, pos[1], pos[2], pos[3])
+                            if okPonto and ox and oy and oz then
+                                pontoX, pontoY, pontoZ = ox, oy, oz
+                            end
+                        elseif type(getOffsetFromCharInWorldCoords) == "function" then
+                            local okPonto, ox, oy, oz = pcall(
+                                getOffsetFromCharInWorldCoords, ped, 0.0, 0.0, 1.15)
+                            if okPonto and ox and oy and oz then
+                                pontoX, pontoY, pontoZ = ox, oy, oz
+                            end
                         end
                     end
                     local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
@@ -3851,37 +3906,80 @@ function _G.HZDesenharVisualStaffPc()
 
                         if mostrarStatus or mostrarArma then
                             local vida, colete = 0, 0
+                            local vidaSamp, vidaPed, coleteSamp, coletePed
                             if type(sampGetPlayerHealth) == "function" then
                                 local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
-                                if okVida then vida = tonumber(valorVida) or 0 end
-                            elseif type(getCharHealth) == "function" then
-                                vida = tonumber(getCharHealth(ped)) or 0
+                                if okVida then vidaSamp = tonumber(valorVida) end
+                            end
+                            if type(getCharHealth) == "function" then
+                                local okVidaPed, valorVidaPed = pcall(getCharHealth, ped)
+                                if okVidaPed then vidaPed = tonumber(valorVidaPed) end
                             end
                             if type(sampGetPlayerArmor) == "function" then
                                 local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
-                                if okColete then colete = tonumber(valorColete) or 0 end
-                            elseif type(getCharArmour) == "function" then
-                                colete = tonumber(getCharArmour(ped)) or 0
+                                if okColete then coleteSamp = tonumber(valorColete) end
+                            end
+                            if type(getCharArmour) == "function" then
+                                local okColetePed, valorColetePed = pcall(getCharArmour, ped)
+                                if okColetePed then coletePed = tonumber(valorColetePed) end
+                            end
+                            vida = vidaSamp or vidaPed or 0
+                            colete = coleteSamp or coletePed or 0
+                            if (vidaSamp and vidaSamp > 100) or (vidaPed and vidaPed > 100) then
+                                vida = math.max(vidaSamp or 0, vidaPed or 0)
+                            elseif vidaSamp == 100 and vidaPed
+                                and vidaPed >= 0 and vidaPed < 100 then
+                                vida = vidaPed
+                            end
+                            if (coleteSamp and coleteSamp > 100)
+                                or (coletePed and coletePed > 100) then
+                                colete = math.max(coleteSamp or 0, coletePed or 0)
+                            elseif coleteSamp == 100 and coletePed
+                                and coletePed >= 0 and coletePed < 100 then
+                                colete = coletePed
                             end
                             vida = math.max(0, math.floor(vida))
                             colete = math.max(0, math.floor(colete))
+                            local capacete = nil
+                            local statsTd = _G.HZVisualTextdrawAtual or {}
+                            if tonumber(statsTd.id) == tonumber(item.id)
+                                and tostring(statsTd.nick or ""):lower()
+                                    == tostring(sampGetPlayerNickname(item.id) or ""):lower() then
+                                if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
+                                if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
+                                capacete = tonumber(statsTd.capacete)
+                            end
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if mostrarStatus then
-                                local vidaTexto = tostring(math.min(100, vida)) .. "%"
-                                local coleteTexto = tostring(math.min(100, colete)) .. "%"
+                                local vidaTexto = tostring(math.min(250, vida)) .. "%"
+                                local coleteTexto = tostring(math.min(250, colete)) .. "%"
+                                local capaceteTexto = capacete
+                                    and (tostring(math.min(250, math.floor(capacete))) .. "%") or nil
                                 local larguraVida =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, vidaTexto)
                                 local larguraColete =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
-                                local inicio = sx - (larguraVida + 8 + larguraColete) / 2
+                                local larguraCapacete = capaceteTexto and
+                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, capaceteTexto) or 0
+                                local larguraTotal = larguraVida + 8 + larguraColete
+                                    + (capaceteTexto and (8 + larguraCapacete) or 0)
+                                local inicio = sx - larguraTotal / 2
                                 renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
                                     inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
                                     inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
+                                if capaceteTexto then
+                                    renderFontDrawText(_G.HZVisualStaffFontePc, capaceteTexto,
+                                        inicio + larguraVida + 8 + larguraColete + 8,
+                                        statusY, 0xFF48C6FF)
+                                end
                             end
                             if mostrarArma then
-                                local armaTexto = _G.HZNomesArmasVisualPc[armaId]
+                                local armaTexto = (tonumber(statsTd.id) == tonumber(item.id)
+                                    and statsTd.arma and statsTd.arma ~= "N/A")
+                                    and statsTd.arma
+                                    or _G.HZNomesArmasVisualPc[armaId]
                                     or ("Arma " .. tostring(armaId))
                                 local larguraArma =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, armaTexto)
@@ -6745,7 +6843,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.33",
+    versao = "2.36",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
