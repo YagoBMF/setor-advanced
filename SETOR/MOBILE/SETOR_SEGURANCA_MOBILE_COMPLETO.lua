@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.84'
+local VERSION = '3.85'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1768,7 +1768,9 @@ local function atualizarStatsTextdrawSeparado(grupo)
         if type(item) == 'table' and agora - (tonumber(item.em) or agora) <= 15 then
             itens[#itens + 1] = {
                 id = tonumber(id) or 0,
-                texto = clean(item.texto):gsub('_', ' '):gsub('%s+', ' ')
+                texto = clean(item.texto):gsub('_', ' '):gsub('%s+', ' '),
+                x = tonumber(item.x),
+                y = tonumber(item.y)
             }
         else
             mapa[id] = nil
@@ -1792,11 +1794,35 @@ local function atualizarStatsTextdrawSeparado(grupo)
     for indice, item in ipairs(itens) do
         local campo = campoDoRotulo(item.texto)
         if campo then
-            -- No painel HZ o valor fica nos TextDraws imediatamente seguintes.
-            -- Limitar a seis IDs evita capturar RG, IP, dinheiro ou ping.
-            for proximo = indice + 1, math.min(#itens, indice + 6) do
+            -- Primeiro procura o numero visualmente na mesma linha do rotulo.
+            -- Isso funciona mesmo quando os IDs de VIDA e seu valor ficam longe.
+            local melhorValor, melhorDistancia
+            if item.x and item.y then
+                for _, candidato in ipairs(itens) do
+                    local valor = numeroIsolado(candidato.texto)
+                    if valor ~= nil and valor >= 0 and valor <= 250
+                        and candidato.x and candidato.y
+                        and candidato.x >= item.x
+                        and math.abs(candidato.y - item.y) <= 5 then
+                        local distancia = math.abs(candidato.x - item.x)
+                            + math.abs(candidato.y - item.y) * 4
+                        if candidato.id ~= item.id
+                            and (not melhorDistancia or distancia < melhorDistancia) then
+                            melhorValor, melhorDistancia = valor, distancia
+                        end
+                    end
+                end
+            end
+            if melhorValor ~= nil then
+                encontrados[campo] = melhorValor
+            end
+
+            -- Compatibilidade para builds do MonetLoader que não fornecem
+            -- coordenadas: usa o primeiro numero posterior dentro do bloco.
+            for proximo = indice + 1, math.min(#itens, indice + 24) do
+                if encontrados[campo] ~= nil then break end
                 local candidato = itens[proximo]
-                if candidato.id - item.id > 6 or campoDoRotulo(candidato.texto) then break end
+                if candidato.id - item.id > 32 or campoDoRotulo(candidato.texto) then break end
                 local valor = numeroIsolado(candidato.texto)
                 if valor ~= nil and valor >= 0 and valor <= 250 then
                     encontrados[campo] = valor
@@ -1820,10 +1846,15 @@ local function atualizarStatsTextdrawSeparado(grupo)
     end
 end
 
-local function registrarTextdrawVisual(grupo, id, texto)
+local function registrarTextdrawVisual(grupo, id, texto, dados)
     grupo = grupo == 'player' and 'player' or 'global'
-    visualTextdrawMapa[grupo][tonumber(id) or 0] = {
-        texto = tostring(texto or ''),
+    local chave = tonumber(id) or 0
+    local anterior = visualTextdrawMapa[grupo][chave] or {}
+    local posicao = type(dados) == 'table' and dados.position or nil
+    local x = type(posicao) == 'table' and (posicao.x or posicao[1]) or anterior.x
+    local y = type(posicao) == 'table' and (posicao.y or posicao[2]) or anterior.y
+    visualTextdrawMapa[grupo][chave] = {
+        texto = tostring(texto or ''), x = tonumber(x), y = tonumber(y),
         em = os.clock and os.clock() or 0
     }
     capturarHorarioServidor(texto)
@@ -2399,7 +2430,7 @@ function samp.onPlayerQuit(playerId, reason)
 end
 
 function samp.onShowTextDraw(id, data)
-    if type(data) == 'table' then registrarTextdrawVisual('global', id, data.text) end
+    if type(data) == 'table' then registrarTextdrawVisual('global', id, data.text, data) end
 end
 
 function samp.onTextDrawSetString(id, text)
@@ -2407,7 +2438,7 @@ function samp.onTextDrawSetString(id, text)
 end
 
 function samp.onShowPlayerTextDraw(playerId, id, data)
-    if type(data) == 'table' then registrarTextdrawVisual('player', id, data.text) end
+    if type(data) == 'table' then registrarTextdrawVisual('player', id, data.text, data) end
 end
 
 function samp.onPlayerTextDrawSetString(playerId, id, text)
