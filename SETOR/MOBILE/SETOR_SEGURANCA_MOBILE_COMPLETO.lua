@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.69'
+local VERSION = '3.70'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -54,7 +54,8 @@ local cfg = inicfg.load({
         painel_tv = true, navegacao_tv = true,
         monitoramento = true, acoes_staff = true, atendimento = true,
         automacoes_staff = true, visual_staff = false,
-        visual_nomes = true, visual_status = true, visual_arma = true, logs = true
+        visual_nomes = true, visual_id = false,
+        visual_status = true, visual_arma = true, logs = true
     },
     automacoes = { total = 0 }
 }, CONFIG_FILE)
@@ -105,6 +106,7 @@ if cfg.modulos.atendimento == nil then cfg.modulos.atendimento = true end
 if cfg.modulos.automacoes_staff == nil then cfg.modulos.automacoes_staff = true end
 if cfg.modulos.visual_staff == nil then cfg.modulos.visual_staff = false end
 if cfg.modulos.visual_nomes == nil then cfg.modulos.visual_nomes = true end
+if cfg.modulos.visual_id == nil then cfg.modulos.visual_id = false end
 if cfg.modulos.visual_status == nil then cfg.modulos.visual_status = true end
 if cfg.modulos.visual_arma == nil then cfg.modulos.visual_arma = true end
 -- Logs sao obrigatorios para toda a staff e nao podem ser desativados.
@@ -988,12 +990,15 @@ local function desenharVisualStaff()
                             posicoesVeiculoNaTela[#posicoesVeiculoNaTela + 1] = {x=sx, y=sy}
                         end
                         local nick = tostring(sampGetPlayerNickname(item.id) or '?')
+                        if cfg.modulos.visual_id ~= false then
+                            nick = nick .. ' (' .. tostring(item.id) .. ')'
+                        end
                         local cor = 0xFFFFFFFF
                         local largura = type(renderGetFontDrawTextLength) == 'function'
                             and renderGetFontDrawTextLength(visualStaffFonte, nick) or 0
                         if cfg.modulos.visual_nomes ~= false then
                             renderFontDrawText(visualStaffFonte, nick,
-                                sx - largura / 2, sy - 60, cor)
+                                sx - largura / 2, sy - 88, cor)
                         end
 
                         if nivel >= 2 and not emVeiculo
@@ -1005,19 +1010,25 @@ local function desenharVisualStaff()
                                 and math.max(0, math.floor(tonumber(getCharArmour(ped)) or 0)) or 0
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            local partes = {}
                             if cfg.modulos.visual_status ~= false then
-                                partes[#partes + 1] = string.format('Vida: %d | Colete: %d', vida, colete)
+                                local vidaTexto = tostring(math.min(100, vida)) .. '%'
+                                local coleteTexto = tostring(math.min(100, colete)) .. '%'
+                                local larguraVida = renderGetFontDrawTextLength(visualStaffFonte, vidaTexto)
+                                local larguraColete = renderGetFontDrawTextLength(visualStaffFonte, coleteTexto)
+                                local inicio = sx - (larguraVida + 8 + larguraColete) / 2
+                                renderFontDrawText(visualStaffFonte, vidaTexto,
+                                    inicio, sy - 74, 0xFFE74C3C)
+                                renderFontDrawText(visualStaffFonte, coleteTexto,
+                                    inicio + larguraVida + 8, sy - 74, 0xFFFFFFFF)
                             end
                             if cfg.modulos.visual_arma ~= false then
-                                partes[#partes + 1] =
-                                    NOMES_ARMAS_VISUAL[armaId] or ('Arma ' .. tostring(armaId))
+                                local armaTexto = NOMES_ARMAS_VISUAL[armaId]
+                                    or ('Arma ' .. tostring(armaId))
+                                local larguraArma = renderGetFontDrawTextLength(
+                                    visualStaffFonte, armaTexto)
+                                renderFontDrawText(visualStaffFonte, armaTexto,
+                                    sx - larguraArma / 2, sy - 60, 0xFFFFFFFF)
                             end
-                            local detalhes = table.concat(partes, ' | ')
-                            local larguraDetalhes = type(renderGetFontDrawTextLength) == 'function'
-                                and renderGetFontDrawTextLength(visualStaffFonte, detalhes) or 0
-                            renderFontDrawText(visualStaffFonte, detalhes,
-                                sx - larguraDetalhes / 2, sy - 74, 0xFFFFFFFF)
                         end
                     end
                 end
@@ -1800,6 +1811,7 @@ function _G.HZMobileAbrirVisualStaff()
     end
     adicionar('visual_staff', 'ATIVAR VISUAL STAFF')
     adicionar('visual_nomes', 'NOMES')
+    adicionar('visual_id', 'ID')
     if nivel >= 2 then
         adicionar('visual_status', 'VIDA E COLETE')
         adicionar('visual_arma', 'ARMA')
