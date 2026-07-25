@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.75'
+local VERSION = '3.78'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -967,11 +967,48 @@ local function desenharVisualStaff()
                 if distancia <= 500 then
                     local emVeiculo = type(isCharInAnyCar) == 'function' and isCharInAnyCar(ped)
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
-                    if emVeiculo and type(getOffsetFromCharInWorldCoords) == 'function' then
-                        local okPonto, ox, oy, oz = pcall(
-                            getOffsetFromCharInWorldCoords, ped, 0.0, 0.0, 1.15)
-                        if okPonto and ox and oy and oz then
-                            pontoX, pontoY, pontoZ = ox, oy, oz
+                    if emVeiculo then
+                        local carro, assento = nil, nil
+                        if type(storeCarCharIsInNoSave) == 'function' then
+                            local okCarro, valorCarro = pcall(storeCarCharIsInNoSave, ped)
+                            if okCarro then carro = valorCarro end
+                        end
+                        if carro and type(getDriverOfCar) == 'function' then
+                            local okMotorista, motorista = pcall(getDriverOfCar, carro)
+                            if okMotorista and motorista == ped then assento = -1 end
+                        end
+                        if carro and assento == nil
+                            and type(getCharInCarPassengerSeat) == 'function' then
+                            for indiceAssento = 0, 7 do
+                                local okLugar, ocupante = pcall(
+                                    getCharInCarPassengerSeat, carro, indiceAssento)
+                                if okLugar and ocupante == ped then
+                                    assento = indiceAssento
+                                    break
+                                end
+                            end
+                        end
+                        if carro and assento ~= nil
+                            and type(getOffsetFromCarInWorldCoords) == 'function' then
+                            local posicoes = {
+                                [-1]={-0.62, 0.28, 1.35}, [0]={0.62, 0.28, 1.35},
+                                [1]={-0.62, -0.62, 1.35}, [2]={0.62, -0.62, 1.35},
+                                [3]={-0.62, -1.25, 1.35}, [4]={0.62, -1.25, 1.35}
+                            }
+                            local pos = posicoes[assento]
+                                or {(assento % 2 == 0) and 0.62 or -0.62,
+                                    -1.25 - math.floor(assento / 2) * 0.55, 1.35}
+                            local okPonto, ox, oy, oz = pcall(
+                                getOffsetFromCarInWorldCoords, carro, pos[1], pos[2], pos[3])
+                            if okPonto and ox and oy and oz then
+                                pontoX, pontoY, pontoZ = ox, oy, oz
+                            end
+                        elseif type(getOffsetFromCharInWorldCoords) == 'function' then
+                            local okPonto, ox, oy, oz = pcall(
+                                getOffsetFromCharInWorldCoords, ped, 0.0, 0.0, 1.15)
+                            if okPonto and ox and oy and oz then
+                                pontoX, pontoY, pontoZ = ox, oy, oz
+                            end
                         end
                     end
                     local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
@@ -998,11 +1035,11 @@ local function desenharVisualStaff()
                             nick = nick .. ' (' .. tostring(item.id) .. ')'
                         end
                         local mostrarNome = cfg.modulos.visual_nomes ~= false
-                        local mostrarStatus = nivel >= 2 and not emVeiculo
+                        local mostrarStatus = nivel >= 2
                             and cfg.modulos.visual_status ~= false
                         local mostrarArma = nivel >= 2 and not emVeiculo
                             and cfg.modulos.visual_arma ~= false
-                        local limiteInferior = sy - 60
+                        local limiteInferior = emVeiculo and (sy - 57) or (sy - 60)
                         local nomeY = limiteInferior
                             - (mostrarStatus and 14 or 0)
                             - (mostrarArma and 14 or 0)
@@ -1834,7 +1871,7 @@ function _G.HZMobileAbrirVisualStaff()
     end
     adicionar('visual_staff', 'ATIVAR VISUAL STAFF')
     adicionar('visual_nomes', 'NOMES')
-    adicionar('visual_id', 'ID')
+    adicionar('visual_id', 'MOSTRAR ID')
     if nivel >= 2 then
         adicionar('visual_status', 'VIDA E COLETE')
         adicionar('visual_arma', 'ARMA')
