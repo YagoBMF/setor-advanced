@@ -3940,13 +3940,17 @@ function _G.HZDesenharVisualStaffPc()
                             end
                             vida = math.max(0, math.floor(vida))
                             colete = math.max(0, math.floor(colete))
+                            -- Vida e colete devem vir exclusivamente da estrutura
+                            -- sincronizada do jogador. O TextDraw do servidor pode
+                            -- permanecer com valores antigos e sobrescrever o valor
+                            -- real (por exemplo, mostrar 100 quando o jogador tem 75).
+                            -- Capacete continua vindo do TextDraw porque não existe
+                            -- esse campo na estrutura padrão do SA-MP.
                             local capacete = nil
                             local statsTd = _G.HZVisualTextdrawAtual or {}
                             if tonumber(statsTd.id) == tonumber(item.id)
                                 and tostring(statsTd.nick or ""):lower()
                                     == tostring(sampGetPlayerNickname(item.id) or ""):lower() then
-                                if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
-                                if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
                                 capacete = tonumber(statsTd.capacete)
                             end
                             local armaId = type(getCurrentCharWeapon) == "function"
@@ -6843,7 +6847,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.36",
+    versao = "2.37",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
