@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.83'
+local VERSION = '3.84'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -116,6 +116,10 @@ inicfg.save(cfg, CONFIG_FILE)
 local cache, monitorados = {}, {}
 local rgAtual, nickAtual = nil, nil
 local visualTextdrawAtual = {id=nil, nick=nil, vida=nil, colete=nil, capacete=nil, arma=nil}
+-- O painel de informacoes do servidor separa alguns rotulos e valores em
+-- TextDraws diferentes. Mantemos o mapa por ID para reconstruir VIDA,
+-- COLETE e CAPACETE sem misturar numeros de outras partes da tela.
+local visualTextdrawMapa = {global = {}, player = {}}
 -- O MonetLoader pode devolver score 0 antes de sincronizar o TAB. Esse valor
 -- so deve valer como Level 0 quando for confirmado nas informacoes do servidor.
 local levelAtualConfirmado = nil
@@ -1101,6 +1105,13 @@ local function desenharVisualStaff()
                             if tonumber(statsTd.id) == tonumber(item.id)
                                 and tostring(statsTd.nick or ''):lower()
                                     == tostring(sampGetPlayerNickname(item.id) or ''):lower() then
+                                -- Valores reconstruidos pelo par rotulo/valor do
+                                -- painel do servidor sao mais confiaveis no Android
+                                -- que a estrutura de vida do MonetLoader.
+                                if statsTd.fonteSeparada == true then
+                                    if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
+                                    if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
+                                end
                                 capacete = tonumber(statsTd.capacete)
                             end
                             local armaId = type(getCurrentCharWeapon) == 'function'
@@ -1748,6 +1759,77 @@ local function capturarHorarioServidor(texto)
     end
 end
 
+local function atualizarStatsTextdrawSeparado(grupo)
+    local mapa = visualTextdrawMapa[grupo]
+    if type(mapa) ~= 'table' then return end
+    local agora = os.clock and os.clock() or 0
+    local itens = {}
+    for id, item in pairs(mapa) do
+        if type(item) == 'table' and agora - (tonumber(item.em) or agora) <= 15 then
+            itens[#itens + 1] = {
+                id = tonumber(id) or 0,
+                texto = clean(item.texto):gsub('_', ' '):gsub('%s+', ' ')
+            }
+        else
+            mapa[id] = nil
+        end
+    end
+    table.sort(itens, function(a, b) return a.id < b.id end)
+
+    local encontrados = {}
+    local function numeroIsolado(texto)
+        texto = trim(tostring(texto or '')):gsub(',', '.')
+        return tonumber(texto:match('^([%+%-]?%d+%.?%d*)%%?$'))
+    end
+    local function campoDoRotulo(texto)
+        local t = trim(tostring(texto or '')):lower():gsub(':%s*$', '')
+        if t == 'vida' then return 'vida' end
+        if t == 'colete' then return 'colete' end
+        if t == 'capacete' then return 'capacete' end
+        return nil
+    end
+
+    for indice, item in ipairs(itens) do
+        local campo = campoDoRotulo(item.texto)
+        if campo then
+            -- No painel HZ o valor fica nos TextDraws imediatamente seguintes.
+            -- Limitar a seis IDs evita capturar RG, IP, dinheiro ou ping.
+            for proximo = indice + 1, math.min(#itens, indice + 6) do
+                local candidato = itens[proximo]
+                if candidato.id - item.id > 6 or campoDoRotulo(candidato.texto) then break end
+                local valor = numeroIsolado(candidato.texto)
+                if valor ~= nil and valor >= 0 and valor <= 250 then
+                    encontrados[campo] = valor
+                    break
+                end
+            end
+        end
+    end
+
+    if next(encontrados) then
+        local idAtual = select(1, dadosJogadorAtual())
+        local nick = tostring(nickAtual or '')
+        if visualTextdrawAtual.id ~= idAtual
+            or tostring(visualTextdrawAtual.nick or ''):lower() ~= nick:lower() then
+            visualTextdrawAtual = {id=idAtual, nick=nick}
+        end
+        for campo, valor in pairs(encontrados) do
+            visualTextdrawAtual[campo] = valor
+        end
+        visualTextdrawAtual.fonteSeparada = true
+    end
+end
+
+local function registrarTextdrawVisual(grupo, id, texto)
+    grupo = grupo == 'player' and 'player' or 'global'
+    visualTextdrawMapa[grupo][tonumber(id) or 0] = {
+        texto = tostring(texto or ''),
+        em = os.clock and os.clock() or 0
+    }
+    capturarHorarioServidor(texto)
+    atualizarStatsTextdrawSeparado(grupo)
+end
+
 local function abrirPrincipal()
     local itens = {}
     local linhas = {}
@@ -2317,19 +2399,27 @@ function samp.onPlayerQuit(playerId, reason)
 end
 
 function samp.onShowTextDraw(id, data)
-    if type(data) == 'table' then capturarHorarioServidor(data.text) end
+    if type(data) == 'table' then registrarTextdrawVisual('global', id, data.text) end
 end
 
 function samp.onTextDrawSetString(id, text)
-    capturarHorarioServidor(text)
+    registrarTextdrawVisual('global', id, text)
 end
 
 function samp.onShowPlayerTextDraw(playerId, id, data)
-    if type(data) == 'table' then capturarHorarioServidor(data.text) end
+    if type(data) == 'table' then registrarTextdrawVisual('player', id, data.text) end
 end
 
 function samp.onPlayerTextDrawSetString(playerId, id, text)
-    capturarHorarioServidor(text)
+    registrarTextdrawVisual('player', id, text)
+end
+
+function samp.onHideTextDraw(id)
+    visualTextdrawMapa.global[tonumber(id) or 0] = nil
+end
+
+function samp.onHidePlayerTextDraw(playerId, id)
+    visualTextdrawMapa.player[tonumber(id) or 0] = nil
 end
 
 function samp.onShowDialog(dialogId, style, title, button1, button2, text)
