@@ -3801,7 +3801,7 @@ function _G.HZDesenharVisualStaffPc()
             if existe and ped and (type(isCharOnScreen) ~= "function" or isCharOnScreen(ped)) then
                 local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
-                if math.sqrt(dx * dx + dy * dy + dz * dz) <= 500 then
+                if math.sqrt(dx * dx + dy * dy + dz * dz) <= 750 then
                     local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
                     if emVeiculo and type(getOffsetFromCharInWorldCoords) == "function" then
@@ -3825,21 +3825,31 @@ function _G.HZDesenharVisualStaffPc()
                             posicoesVeiculoNaTela[#posicoesVeiculoNaTela + 1] = {x=sx, y=sy}
                         end
                         local nome = tostring(sampGetPlayerNickname(item.id) or "?")
+                        if type(sampIsPlayerPaused) == "function" then
+                            local okPausa, pausado = pcall(sampIsPlayerPaused, item.id)
+                            if okPausa and pausado then nome = "|| " .. nome end
+                        end
                         if configSistema.modulos.visual_id ~= false then
                             nome = nome .. " (" .. tostring(item.id) .. ")"
                         end
+                        local mostrarNome = configSistema.modulos.visual_nomes ~= false
+                        local mostrarStatus = nivel >= 2
+                            and configSistema.modulos.visual_status ~= false
+                        local mostrarArma = nivel >= 2 and not emVeiculo
+                            and configSistema.modulos.visual_arma ~= false
+                        local limiteInferior = emVeiculo and (sy - 57) or (sy - 73)
+                        local nomeY = limiteInferior
+                            - (mostrarStatus and 14 or 0)
+                            - (mostrarArma and 14 or 0)
+                        local statusY = limiteInferior - (mostrarArma and 14 or 0)
                         local largura = type(renderGetFontDrawTextLength) == "function"
                             and renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, nome) or 0
-                        if configSistema.modulos.visual_nomes ~= false then
-                            local nomeY = emVeiculo and (sy - 71) or (sy - 101)
+                        if mostrarNome then
                             renderFontDrawText(_G.HZVisualStaffFontePc, nome,
                                 sx - largura / 2, nomeY, 0xFFFFFFFF)
                         end
 
-                        if nivel >= 2
-                            and (configSistema.modulos.visual_status ~= false
-                                or (not emVeiculo
-                                    and configSistema.modulos.visual_arma ~= false)) then
+                        if mostrarStatus or mostrarArma then
                             local vida, colete = 0, 0
                             if type(sampGetPlayerHealth) == "function" then
                                 local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
@@ -3857,7 +3867,7 @@ function _G.HZDesenharVisualStaffPc()
                             colete = math.max(0, math.floor(colete))
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            if configSistema.modulos.visual_status ~= false then
+                            if mostrarStatus then
                                 local vidaTexto = tostring(math.min(100, vida)) .. "%"
                                 local coleteTexto = tostring(math.min(100, colete)) .. "%"
                                 local larguraVida =
@@ -3865,19 +3875,18 @@ function _G.HZDesenharVisualStaffPc()
                                 local larguraColete =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
                                 local inicio = sx - (larguraVida + 8 + larguraColete) / 2
-                                local statusY = emVeiculo and (sy - 57) or (sy - 87)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
                                     inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
                                     inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
                             end
-                            if not emVeiculo and configSistema.modulos.visual_arma ~= false then
+                            if mostrarArma then
                                 local armaTexto = _G.HZNomesArmasVisualPc[armaId]
                                     or ("Arma " .. tostring(armaId))
                                 local larguraArma =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, armaTexto)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, armaTexto,
-                                    sx - larguraArma / 2, sy - 73, 0xFFFFFFFF)
+                                    sx - larguraArma / 2, limiteInferior, 0xFFFFFFFF)
                             end
                         end
                     end
@@ -6736,7 +6745,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.30",
+    versao = "2.33",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
