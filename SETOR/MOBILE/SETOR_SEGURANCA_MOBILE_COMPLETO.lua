@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.87'
+local VERSION = '3.88'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1086,8 +1086,13 @@ local function desenharVisualStaff()
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if mostrarStatus then
-                                local vidaTexto = tostring(math.min(250, vida)) .. '%'
-                                local coleteTexto = tostring(math.min(250, colete)) .. '%'
+                                -- O protocolo mobile nao diferencia 100 de valores
+                                -- superiores. Sinaliza o teto em vez de afirmar um
+                                -- valor possivelmente incorreto.
+                                local vidaTexto = vida >= 100 and '+100%'
+                                    or (tostring(math.min(250, vida)) .. '%')
+                                local coleteTexto = colete >= 100 and '+100%'
+                                    or (tostring(math.min(250, colete)) .. '%')
                                 local capaceteTexto = capacete
                                     and (tostring(math.min(250, math.floor(capacete))) .. '%') or nil
                                 local larguraVida = renderGetFontDrawTextLength(visualStaffFonte, vidaTexto)
