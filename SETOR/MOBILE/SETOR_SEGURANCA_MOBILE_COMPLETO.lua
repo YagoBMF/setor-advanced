@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.80'
+local VERSION = '3.82'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -115,6 +115,7 @@ inicfg.save(cfg, CONFIG_FILE)
 
 local cache, monitorados = {}, {}
 local rgAtual, nickAtual = nil, nil
+local visualTextdrawAtual = {id=nil, nick=nil, vida=nil, colete=nil, capacete=nil, arma=nil}
 -- O MonetLoader pode devolver score 0 antes de sincronizar o TAB. Esse valor
 -- so deve valer como Level 0 quando for confirmado nas informacoes do servidor.
 local levelAtualConfirmado = nil
@@ -1073,6 +1074,13 @@ local function desenharVisualStaff()
                             end
                             vida = vidaSamp or vidaPed or 0
                             colete = coleteSamp or coletePed or 0
+                            if (vidaSamp and vidaSamp > 100) or (vidaPed and vidaPed > 100) then
+                                vida = math.max(vidaSamp or 0, vidaPed or 0)
+                            end
+                            if (coleteSamp and coleteSamp > 100)
+                                or (coletePed and coletePed > 100) then
+                                colete = math.max(coleteSamp or 0, coletePed or 0)
+                            end
                             -- Algumas builds mantem a leitura SA-MP travada em
                             -- 100. Nesse caso, o ped sincronizado e mais fiel.
                             if vidaSamp == 100 and vidaPed and vidaPed >= 0 and vidaPed < 100 then
@@ -1084,21 +1092,45 @@ local function desenharVisualStaff()
                             end
                             vida = math.max(0, math.floor(vida))
                             colete = math.max(0, math.floor(colete))
+                            local capacete = nil
+                            local statsTd = visualTextdrawAtual
+                            if tonumber(statsTd.id) == tonumber(item.id)
+                                and tostring(statsTd.nick or ''):lower()
+                                    == tostring(sampGetPlayerNickname(item.id) or ''):lower() then
+                                if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
+                                if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
+                                capacete = tonumber(statsTd.capacete)
+                            end
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if mostrarStatus then
-                                local vidaTexto = tostring(math.min(100, vida)) .. '%'
-                                local coleteTexto = tostring(math.min(100, colete)) .. '%'
+                                local vidaTexto = tostring(math.min(250, vida)) .. '%'
+                                local coleteTexto = tostring(math.min(250, colete)) .. '%'
+                                local capaceteTexto = capacete
+                                    and (tostring(math.min(250, math.floor(capacete))) .. '%') or nil
                                 local larguraVida = renderGetFontDrawTextLength(visualStaffFonte, vidaTexto)
                                 local larguraColete = renderGetFontDrawTextLength(visualStaffFonte, coleteTexto)
-                                local inicio = sx - (larguraVida + 8 + larguraColete) / 2
+                                local larguraCapacete = capaceteTexto
+                                    and renderGetFontDrawTextLength(visualStaffFonte, capaceteTexto) or 0
+                                local larguraTotal = larguraVida + 8 + larguraColete
+                                    + (capaceteTexto and (8 + larguraCapacete) or 0)
+                                local inicio = sx - larguraTotal / 2
                                 renderFontDrawText(visualStaffFonte, vidaTexto,
                                     inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(visualStaffFonte, coleteTexto,
                                     inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
+                                if capaceteTexto then
+                                    renderFontDrawText(visualStaffFonte, capaceteTexto,
+                                        inicio + larguraVida + 8 + larguraColete + 8,
+                                        statusY, 0xFF48C6FF)
+                                end
                             end
                             if mostrarArma then
-                                local armaTexto = NOMES_ARMAS_VISUAL[armaId]
+                                local armaTexto = (visualTextdrawAtual.id == item.id
+                                    and visualTextdrawAtual.arma
+                                    and visualTextdrawAtual.arma ~= 'N/A')
+                                    and visualTextdrawAtual.arma
+                                    or NOMES_ARMAS_VISUAL[armaId]
                                     or ('Arma ' .. tostring(armaId))
                                 local larguraArma = renderGetFontDrawTextLength(
                                     visualStaffFonte, armaTexto)
@@ -1633,6 +1665,22 @@ end
 local function capturarHorarioServidor(texto)
     texto = clean(texto):gsub('_', ' '):gsub('%s+', ' ')
     local baixo = texto:lower()
+    local vidaTd = texto:match('[Vv][Ii][Dd][Aa][:%s]+([%d%.]+)')
+    local coleteTd = texto:match('[Cc][Oo][Ll][Ee][Tt][Ee][:%s]+([%d%.]+)')
+    local capaceteTd = texto:match('[Cc][Aa][Pp][Aa][Cc][Ee][Tt][Ee][:%s]+([%d%.]+)')
+    local armaTd = texto:match('[Aa][Rr][Mm][Aa][:%s]+([%w%s_%-]+)')
+    if vidaTd or coleteTd or capaceteTd or armaTd then
+        local idTd = select(1, dadosJogadorAtual())
+        local nickTd = tostring(nickAtual or '')
+        if visualTextdrawAtual.id ~= idTd
+            or tostring(visualTextdrawAtual.nick or ''):lower() ~= nickTd:lower() then
+            visualTextdrawAtual = {id=idTd, nick=nickTd}
+        end
+        if vidaTd then visualTextdrawAtual.vida = tonumber(vidaTd) end
+        if coleteTd then visualTextdrawAtual.colete = tonumber(coleteTd) end
+        if capaceteTd then visualTextdrawAtual.capacete = tonumber(capaceteTd) end
+        if armaTd then visualTextdrawAtual.arma = trim(armaTd) end
+    end
     local levelServidor = texto:match('[Ll][Ee][Vv][Ee][Ll][:%s]+(%d+)')
         or texto:match('[Nn][Ii][Vv][Ee][Ll][:%s]+(%d+)')
     if levelServidor and (painelTvFlutuante or aguardandoReport) then
