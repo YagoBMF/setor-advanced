@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.79'
+local VERSION = '3.80'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1054,17 +1054,33 @@ local function desenharVisualStaff()
 
                         if mostrarStatus or mostrarArma then
                             local vida, colete = 0, 0
+                            local vidaSamp, vidaPed, coleteSamp, coletePed
                             if type(sampGetPlayerHealth) == 'function' then
                                 local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
-                                if okVida then vida = tonumber(valorVida) or 0 end
-                            elseif type(getCharHealth) == 'function' then
-                                vida = tonumber(getCharHealth(ped)) or 0
+                                if okVida then vidaSamp = tonumber(valorVida) end
+                            end
+                            if type(getCharHealth) == 'function' then
+                                local okVidaPed, valorVidaPed = pcall(getCharHealth, ped)
+                                if okVidaPed then vidaPed = tonumber(valorVidaPed) end
                             end
                             if type(sampGetPlayerArmor) == 'function' then
                                 local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
-                                if okColete then colete = tonumber(valorColete) or 0 end
-                            elseif type(getCharArmour) == 'function' then
-                                colete = tonumber(getCharArmour(ped)) or 0
+                                if okColete then coleteSamp = tonumber(valorColete) end
+                            end
+                            if type(getCharArmour) == 'function' then
+                                local okColetePed, valorColetePed = pcall(getCharArmour, ped)
+                                if okColetePed then coletePed = tonumber(valorColetePed) end
+                            end
+                            vida = vidaSamp or vidaPed or 0
+                            colete = coleteSamp or coletePed or 0
+                            -- Algumas builds mantem a leitura SA-MP travada em
+                            -- 100. Nesse caso, o ped sincronizado e mais fiel.
+                            if vidaSamp == 100 and vidaPed and vidaPed >= 0 and vidaPed < 100 then
+                                vida = vidaPed
+                            end
+                            if coleteSamp == 100 and coletePed
+                                and coletePed >= 0 and coletePed < 100 then
+                                colete = coletePed
                             end
                             vida = math.max(0, math.floor(vida))
                             colete = math.max(0, math.floor(colete))
