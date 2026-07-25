@@ -3905,41 +3905,20 @@ function _G.HZDesenharVisualStaffPc()
                         end
 
                         if mostrarStatus or mostrarArma then
+                            -- Vida e colete devem vir do jogador remoto no SA-MP.
+                            -- getCharHealth/getCharArmour podem retornar limites
+                            -- internos do modelo (como 250) em vez do estado real.
                             local vida, colete = 0, 0
-                            local vidaSamp, vidaPed, coleteSamp, coletePed
                             if type(sampGetPlayerHealth) == "function" then
                                 local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
-                                if okVida then vidaSamp = tonumber(valorVida) end
-                            end
-                            if type(getCharHealth) == "function" then
-                                local okVidaPed, valorVidaPed = pcall(getCharHealth, ped)
-                                if okVidaPed then vidaPed = tonumber(valorVidaPed) end
+                                if okVida then vida = tonumber(valorVida) or 0 end
                             end
                             if type(sampGetPlayerArmor) == "function" then
                                 local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
-                                if okColete then coleteSamp = tonumber(valorColete) end
+                                if okColete then colete = tonumber(valorColete) or 0 end
                             end
-                            if type(getCharArmour) == "function" then
-                                local okColetePed, valorColetePed = pcall(getCharArmour, ped)
-                                if okColetePed then coletePed = tonumber(valorColetePed) end
-                            end
-                            vida = vidaSamp or vidaPed or 0
-                            colete = coleteSamp or coletePed or 0
-                            if (vidaSamp and vidaSamp > 100) or (vidaPed and vidaPed > 100) then
-                                vida = math.max(vidaSamp or 0, vidaPed or 0)
-                            elseif vidaSamp == 100 and vidaPed
-                                and vidaPed >= 0 and vidaPed < 100 then
-                                vida = vidaPed
-                            end
-                            if (coleteSamp and coleteSamp > 100)
-                                or (coletePed and coletePed > 100) then
-                                colete = math.max(coleteSamp or 0, coletePed or 0)
-                            elseif coleteSamp == 100 and coletePed
-                                and coletePed >= 0 and coletePed < 100 then
-                                colete = coletePed
-                            end
-                            vida = math.max(0, math.floor(vida))
-                            colete = math.max(0, math.floor(colete))
+                            vida = math.max(0, math.floor(vida + 0.5))
+                            colete = math.max(0, math.floor(colete + 0.5))
                             -- Vida e colete devem vir exclusivamente da estrutura
                             -- sincronizada do jogador. O TextDraw do servidor pode
                             -- permanecer com valores antigos e sobrescrever o valor
@@ -6847,7 +6826,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.37",
+    versao = "2.38",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
