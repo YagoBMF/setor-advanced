@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.85'
+local VERSION = '3.86'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1762,18 +1762,18 @@ end
 local function atualizarStatsTextdrawSeparado(grupo)
     local mapa = visualTextdrawMapa[grupo]
     if type(mapa) ~= 'table' then return end
-    local agora = os.clock and os.clock() or 0
     local itens = {}
     for id, item in pairs(mapa) do
-        if type(item) == 'table' and agora - (tonumber(item.em) or agora) <= 15 then
+        -- TextDraws estaticos sao enviados apenas uma vez; depois o servidor
+        -- costuma atualizar somente o valor. O rotulo precisa permanecer no
+        -- mapa ate chegar o evento de ocultacao correspondente.
+        if type(item) == 'table' then
             itens[#itens + 1] = {
                 id = tonumber(id) or 0,
                 texto = clean(item.texto):gsub('_', ' '):gsub('%s+', ' '),
                 x = tonumber(item.x),
                 y = tonumber(item.y)
             }
-        else
-            mapa[id] = nil
         end
     end
     table.sort(itens, function(a, b) return a.id < b.id end)
