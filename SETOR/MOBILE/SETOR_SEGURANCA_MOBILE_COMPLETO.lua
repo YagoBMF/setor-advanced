@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.78'
+local VERSION = '3.79'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -927,7 +927,7 @@ local function desenharVisualStaff()
     if not visualStaffFonte then
         local criarFonte = type(renderCreateFont) == 'function' and renderCreateFont
             or (type(renderFontCreate) == 'function' and renderFontCreate)
-        if criarFonte then visualStaffFonte = criarFonte('Arial', 10, 5) end
+        if criarFonte then visualStaffFonte = criarFonte('Arial', 11, 5) end
     end
     if not visualStaffFonte then return end
 
