@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.65'
+local VERSION = '3.67'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -491,7 +491,7 @@ local MODULOS_INFO = {
     monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
     acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3},
     automacoes_staff = {'AUTOMACOES STAFF', 'Ativa ou pausa todos os anuncios do /setorauto.', 1},
-    visual_staff = {'VISUAL STAFF', 'Nomes ate 500m; Adm+ tambem ve vida, colete e arma.', 2}
+    visual_staff = {'VISUAL STAFF', 'Nomes ate 500m; Adm+ ve vida, colete e arma fora do veiculo.', 2}
 }
 
 local MODULOS_CATEGORIAS = {
@@ -958,16 +958,18 @@ local function desenharVisualStaff()
                 local dx, dy, dz = x - px, y - py, z - pz
                 local distancia = math.sqrt(dx * dx + dy * dy + dz * dz)
                 if distancia <= 500 then
-                    local sx, sy = convert3DCoordsToScreen(x, y, z + 1.15)
+                    local emVeiculo = type(isCharInAnyCar) == 'function' and isCharInAnyCar(ped)
+                    local altura = emVeiculo and 1.65 or 1.15
+                    local sx, sy = convert3DCoordsToScreen(x, y, z + altura)
                     if sx and sy then
                         local nick = tostring(sampGetPlayerNickname(item.id) or '?')
-                            .. ' (' .. tostring(item.id) .. ')'
                         local cor = 0xFFFFFFFF
                         local largura = type(renderGetFontDrawTextLength) == 'function'
                             and renderGetFontDrawTextLength(visualStaffFonte, nick) or 0
-                        renderFontDrawText(visualStaffFonte, nick, sx - largura / 2, sy + 1, cor)
+                        local nomeY = emVeiculo and (sy - 10) or (sy - 27)
+                        renderFontDrawText(visualStaffFonte, nick, sx - largura / 2, nomeY, cor)
 
-                        if nivel >= 3 then
+                        if nivel >= 3 and not emVeiculo then
                             local vida = type(getCharHealth) == 'function'
                                 and math.max(0, math.floor(tonumber(getCharHealth(ped)) or 0)) or 0
                             local colete = type(getCharArmour) == 'function'
@@ -975,11 +977,12 @@ local function desenharVisualStaff()
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             local detalhes = string.format('Vida: %d | Colete: %d | %s',
-                                vida, colete, NOMES_ARMAS_VISUAL[armaId] or ('Arma ' .. tostring(armaId)))
+                                vida, colete,
+                                NOMES_ARMAS_VISUAL[armaId] or ('Arma ' .. tostring(armaId)))
                             local larguraDetalhes = type(renderGetFontDrawTextLength) == 'function'
                                 and renderGetFontDrawTextLength(visualStaffFonte, detalhes) or 0
                             renderFontDrawText(visualStaffFonte, detalhes,
-                                sx - larguraDetalhes / 2, sy + 15, 0xFFFFFFFF)
+                                sx - larguraDetalhes / 2, sy - 13, 0xFFFFFFFF)
                         end
                     end
                 end
