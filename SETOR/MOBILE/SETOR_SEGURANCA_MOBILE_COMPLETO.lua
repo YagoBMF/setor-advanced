@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.62'
+local VERSION = '3.63'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -898,6 +898,7 @@ local function desenharPainelTvFlutuante()
 end
 
 local visualStaffFonte, visualStaffProximaVarredura = nil, 0
+local visualStaffErroAvisado = false
 local visualStaffJogadores = {}
 local NOMES_ARMAS_VISUAL = {
     [0]='Desarmado', [1]='Soco ingles', [2]='Taco de golfe', [3]='Cassetete',
@@ -928,7 +929,15 @@ local function desenharVisualStaff()
     if agora >= visualStaffProximaVarredura then
         visualStaffProximaVarredura = agora + 0.25
         visualStaffJogadores = {}
-        local maxId = math.max(0, tonumber(sampGetMaxPlayerId(false)) or 0)
+        -- Algumas builds do MonetLoader nao possuem sampGetMaxPlayerId.
+        -- A varredura limitada e espaçada segue o metodo compativel do mobile.
+        local maxId = 999
+        if type(sampGetMaxPlayerId) == 'function' then
+            local okMax, valorMax = pcall(sampGetMaxPlayerId, false)
+            if okMax and tonumber(valorMax) and tonumber(valorMax) > 0 then
+                maxId = math.min(999, math.floor(tonumber(valorMax)))
+            end
+        end
         for id = 0, maxId do
             if sampIsPlayerConnected(id) then
                 local existe, ped = sampGetCharHandleBySampPlayerId(id)
@@ -959,8 +968,10 @@ local function desenharVisualStaff()
                         renderFontDrawText(visualStaffFonte, nick, sx - largura / 2, sy - 22, cor)
 
                         if nivel >= 3 then
-                            local vida = math.floor(tonumber(sampGetPlayerHealth(item.id)) or 0)
-                            local colete = math.floor(tonumber(sampGetPlayerArmor(item.id)) or 0)
+                            local vida = type(getCharHealth) == 'function'
+                                and math.max(0, math.floor(tonumber(getCharHealth(ped)) or 0)) or 0
+                            local colete = type(getCharArmour) == 'function'
+                                and math.max(0, math.floor(tonumber(getCharArmour(ped)) or 0)) or 0
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             local detalhes = string.format('Vida: %d | Colete: %d | %s',
@@ -2655,11 +2666,10 @@ function main()
             print('[SETOR MOBILE] Painel TV flutuante desativado por incompatibilidade: ' .. tostring(erro))
         end
         local okVisual, erroVisual = pcall(desenharVisualStaff)
-        if not okVisual then
-            cfg.modulos.visual_staff = false
-            inicfg.save(cfg, CONFIG_NAME)
+        if not okVisual and not visualStaffErroAvisado then
+            visualStaffErroAvisado = true
             print('[SETOR MOBILE] Visual Staff desativado por incompatibilidade: ' .. tostring(erroVisual))
-            sampAddChatMessage('[SETOR] Visual Staff desativado: incompatibilidade detectada neste aparelho.', COR_ERRO)
+            sampAddChatMessage('[SETOR] Falha no Visual Staff registrada no monetloader.log.', COR_ERRO)
         end
         if painelTvAcaoPendente then
             local acao = painelTvAcaoPendente
