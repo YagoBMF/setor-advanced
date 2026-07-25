@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.70'
+local VERSION = '3.73'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1004,10 +1004,21 @@ local function desenharVisualStaff()
                         if nivel >= 2 and not emVeiculo
                             and (cfg.modulos.visual_status ~= false
                                 or cfg.modulos.visual_arma ~= false) then
-                            local vida = type(getCharHealth) == 'function'
-                                and math.max(0, math.floor(tonumber(getCharHealth(ped)) or 0)) or 0
-                            local colete = type(getCharArmour) == 'function'
-                                and math.max(0, math.floor(tonumber(getCharArmour(ped)) or 0)) or 0
+                            local vida, colete = 0, 0
+                            if type(sampGetPlayerHealth) == 'function' then
+                                local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
+                                if okVida then vida = tonumber(valorVida) or 0 end
+                            elseif type(getCharHealth) == 'function' then
+                                vida = tonumber(getCharHealth(ped)) or 0
+                            end
+                            if type(sampGetPlayerArmor) == 'function' then
+                                local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
+                                if okColete then colete = tonumber(valorColete) or 0 end
+                            elseif type(getCharArmour) == 'function' then
+                                colete = tonumber(getCharArmour(ped)) or 0
+                            end
+                            vida = math.max(0, math.floor(vida))
+                            colete = math.max(0, math.floor(colete))
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if cfg.modulos.visual_status ~= false then
