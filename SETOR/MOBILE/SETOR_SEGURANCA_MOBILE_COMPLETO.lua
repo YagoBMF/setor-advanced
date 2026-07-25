@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.73'
+local VERSION = '3.75'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -990,20 +990,32 @@ local function desenharVisualStaff()
                             posicoesVeiculoNaTela[#posicoesVeiculoNaTela + 1] = {x=sx, y=sy}
                         end
                         local nick = tostring(sampGetPlayerNickname(item.id) or '?')
+                        if type(sampIsPlayerPaused) == 'function' then
+                            local okPausa, pausado = pcall(sampIsPlayerPaused, item.id)
+                            if okPausa and pausado then nick = '|| ' .. nick end
+                        end
                         if cfg.modulos.visual_id ~= false then
                             nick = nick .. ' (' .. tostring(item.id) .. ')'
                         end
+                        local mostrarNome = cfg.modulos.visual_nomes ~= false
+                        local mostrarStatus = nivel >= 2 and not emVeiculo
+                            and cfg.modulos.visual_status ~= false
+                        local mostrarArma = nivel >= 2 and not emVeiculo
+                            and cfg.modulos.visual_arma ~= false
+                        local limiteInferior = sy - 60
+                        local nomeY = limiteInferior
+                            - (mostrarStatus and 14 or 0)
+                            - (mostrarArma and 14 or 0)
+                        local statusY = limiteInferior - (mostrarArma and 14 or 0)
                         local cor = 0xFFFFFFFF
                         local largura = type(renderGetFontDrawTextLength) == 'function'
                             and renderGetFontDrawTextLength(visualStaffFonte, nick) or 0
-                        if cfg.modulos.visual_nomes ~= false then
+                        if mostrarNome then
                             renderFontDrawText(visualStaffFonte, nick,
-                                sx - largura / 2, sy - 88, cor)
+                                sx - largura / 2, nomeY, cor)
                         end
 
-                        if nivel >= 2 and not emVeiculo
-                            and (cfg.modulos.visual_status ~= false
-                                or cfg.modulos.visual_arma ~= false) then
+                        if mostrarStatus or mostrarArma then
                             local vida, colete = 0, 0
                             if type(sampGetPlayerHealth) == 'function' then
                                 local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
@@ -1021,24 +1033,24 @@ local function desenharVisualStaff()
                             colete = math.max(0, math.floor(colete))
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            if cfg.modulos.visual_status ~= false then
+                            if mostrarStatus then
                                 local vidaTexto = tostring(math.min(100, vida)) .. '%'
                                 local coleteTexto = tostring(math.min(100, colete)) .. '%'
                                 local larguraVida = renderGetFontDrawTextLength(visualStaffFonte, vidaTexto)
                                 local larguraColete = renderGetFontDrawTextLength(visualStaffFonte, coleteTexto)
                                 local inicio = sx - (larguraVida + 8 + larguraColete) / 2
                                 renderFontDrawText(visualStaffFonte, vidaTexto,
-                                    inicio, sy - 74, 0xFFE74C3C)
+                                    inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(visualStaffFonte, coleteTexto,
-                                    inicio + larguraVida + 8, sy - 74, 0xFFFFFFFF)
+                                    inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
                             end
-                            if cfg.modulos.visual_arma ~= false then
+                            if mostrarArma then
                                 local armaTexto = NOMES_ARMAS_VISUAL[armaId]
                                     or ('Arma ' .. tostring(armaId))
                                 local larguraArma = renderGetFontDrawTextLength(
                                     visualStaffFonte, armaTexto)
                                 renderFontDrawText(visualStaffFonte, armaTexto,
-                                    sx - larguraArma / 2, sy - 60, 0xFFFFFFFF)
+                                    sx - larguraArma / 2, limiteInferior, 0xFFFFFFFF)
                             end
                         end
                     end
