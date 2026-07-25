@@ -1450,13 +1450,15 @@ local configSistema = {
         monitoramento = true,
         atendimento = true,
         camera_staff = true,
-        automacoes_staff = true
+        automacoes_staff = true,
+        visual_staff = false
     }
 }
 
 _G.HZModulosPadrao = {
     painel_tv = true, navegacao_tv = true, monitoramento = true,
-    atendimento = true, camera_staff = true, automacoes_staff = true
+    atendimento = true, camera_staff = true, automacoes_staff = true,
+    visual_staff = false
 }
 
 _G.HZPermissaoMinimaModulo = {
@@ -1465,7 +1467,8 @@ _G.HZPermissaoMinimaModulo = {
     navegacao_tv = 2,
     monitoramento = 3,
     camera_staff = 3,
-    automacoes_staff = 1
+    automacoes_staff = 1,
+    visual_staff = 2
 }
 
 -- Alguns servidores repetem a confirmacao de login administrativo em eventos
@@ -2888,28 +2891,14 @@ local function getNextAllowedSupportTime()
 end
 
 local function startStaffSupport(cargo)
-    if configSistema.automacaoMensagens == false then
-        staffSupportActive = false
-        staffSupportRole = nil
-        staffSupportIndex = 1
-        staffSupportNextTime = 0
-        return
-    end
-    local role = getStaffSupportRole(cargo or cargoAdmin)
-    if not role or not staffSupportData[role] then
-        staffSupportActive = false
-        staffSupportRole = nil
-        staffSupportIndex = 1
-        staffSupportNextTime = 0
-        return
-    end
-    staffSupportActive = true
-    staffSupportRole = role
+    -- As mensagens antigas agora sao automacoes editaveis no /setorauto.
+    -- Mantem esta entrada apenas para migrar configuracoes antigas sem duplicar envios.
+    staffSupportActive = false
+    staffSupportRole = nil
     staffSupportIndex = 1
-    if isSupportAllowedTime() then
-        staffSupportNextTime = os.time() + 30
-    else
-        staffSupportNextTime = getNextAllowedSupportTime() + 30
+    staffSupportNextTime = 0
+    if _G.HZMigrarMensagensInternasSetorAuto then
+        _G.HZMigrarMensagensInternasSetorAuto(cargo or cargoAdmin)
     end
 end
 
@@ -2951,11 +2940,6 @@ function _G.HZAtualizarAutomacoesStaff()
 
     -- Recupera automaticamente a rotina se o cargo foi identificado depois
     -- do evento inicial de login ou se alguma recarga interrompeu o contador.
-    if _G.HZStaffLogada and configSistema.automacaoMensagens ~= false
-        and not staffSupportActive and getStaffSupportRole(cargoAdmin) then
-        startStaffSupport(cargoAdmin)
-    end
-
     if configSistema.automacaoSaciarme ~= false
         and staffWorkActive and os.time() >= saciarmeNextTime then
         sampSendChat("/saciarme")
@@ -2987,7 +2971,9 @@ function _G.HZAtualizarAutomacoesStaff()
         if comando ~= "" and (type(item) ~= "table" or item.ativo ~= false) then
             local proxima = tonumber(_G.HZAutoPersonalizadasProximas[indice])
             if not proxima then
-                _G.HZAutoPersonalizadasProximas[indice] = agoraAuto + intervalo
+                local primeiroAtraso = math.max(5,
+                    math.floor(tonumber(type(item) == "table" and item.atrasoInicial) or intervalo))
+                _G.HZAutoPersonalizadasProximas[indice] = agoraAuto + primeiroAtraso
             elseif agoraAuto >= proxima then
                 sampSendChat(comando)
                 _G.HZAutoPersonalizadasProximas[indice] = agoraAuto + intervalo
@@ -3755,6 +3741,92 @@ local function uiPopVar(n)
     end
 end
 
+_G.HZVisualStaffFontePc = _G.HZVisualStaffFontePc or nil
+_G.HZVisualStaffJogadoresPc = _G.HZVisualStaffJogadoresPc or {}
+_G.HZVisualStaffProximaVarreduraPc = _G.HZVisualStaffProximaVarreduraPc or 0
+_G.HZVisualStaffErroAvisadoPc = _G.HZVisualStaffErroAvisadoPc or false
+_G.HZNomesArmasVisualPc = _G.HZNomesArmasVisualPc or {
+    [0]="Desarmado", [1]="Soco ingles", [2]="Taco de golfe", [3]="Cassetete",
+    [4]="Faca", [5]="Taco", [6]="Pa", [7]="Taco de sinuca", [8]="Katana",
+    [9]="Motosserra", [16]="Granada", [17]="Gas", [18]="Molotov",
+    [22]="Pistola", [23]="Pistola silenciada", [24]="Desert Eagle",
+    [25]="Shotgun", [26]="Sawnoff", [27]="Combat Shotgun", [28]="Uzi",
+    [29]="MP5", [30]="AK-47", [31]="M4", [32]="Tec-9",
+    [33]="Rifle", [34]="Sniper", [35]="RPG", [37]="Lanca-chamas",
+    [38]="Minigun", [41]="Spray", [42]="Extintor", [43]="Camera",
+    [46]="Paraquedas"
+}
+
+function _G.HZDesenharVisualStaffPc()
+    if not _G.HZModuloAtivo("visual_staff") then return end
+    if type(renderFontDrawText) ~= "function"
+        or type(convert3DCoordsToScreen) ~= "function"
+        or type(sampGetCharHandleBySampPlayerId) ~= "function" then
+        return
+    end
+
+    if not _G.HZVisualStaffFontePc then
+        local criarFonte = type(renderCreateFont) == "function" and renderCreateFont
+            or (type(renderFontCreate) == "function" and renderFontCreate)
+        if criarFonte then _G.HZVisualStaffFontePc = criarFonte("Arial", 10, 5) end
+    end
+    if not _G.HZVisualStaffFontePc then return end
+
+    local agora = os.clock and os.clock() or 0
+    if agora >= _G.HZVisualStaffProximaVarreduraPc then
+        _G.HZVisualStaffProximaVarreduraPc = agora + 0.25
+        _G.HZVisualStaffJogadoresPc = {}
+        local maxId = math.max(0, tonumber(sampGetMaxPlayerId(false)) or 0)
+        for id = 0, maxId do
+            if sampIsPlayerConnected(id) then
+                local existe, ped = sampGetCharHandleBySampPlayerId(id)
+                if existe and ped and ped ~= PLAYER_PED then
+                    _G.HZVisualStaffJogadoresPc[#_G.HZVisualStaffJogadoresPc + 1] = { id = id, ped = ped }
+                end
+            end
+        end
+    end
+
+    local px, py, pz = getCharCoordinates(PLAYER_PED)
+    local nivel = _G.HZNivelCargo(cargoAdmin)
+    for _, item in ipairs(_G.HZVisualStaffJogadoresPc) do
+        if sampIsPlayerConnected(item.id) then
+            local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
+            if existe and ped and (type(isCharOnScreen) ~= "function" or isCharOnScreen(ped)) then
+                local x, y, z = getCharCoordinates(ped)
+                local dx, dy, dz = x - px, y - py, z - pz
+                if math.sqrt(dx * dx + dy * dy + dz * dz) <= 500 then
+                    local sx, sy = convert3DCoordsToScreen(x, y, z + 1.15)
+                    if sx and sy then
+                        local nome = tostring(sampGetPlayerNickname(item.id) or "?")
+                            .. " (" .. tostring(item.id) .. ")"
+                        local largura = type(renderGetFontDrawTextLength) == "function"
+                            and renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, nome) or 0
+                        renderFontDrawText(_G.HZVisualStaffFontePc, nome,
+                            sx - largura / 2, sy - 22, 0xFFFFFFFF)
+
+                        if nivel >= 3 then
+                            local vida = type(getCharHealth) == "function"
+                                and math.max(0, math.floor(tonumber(getCharHealth(ped)) or 0)) or 0
+                            local colete = type(getCharArmour) == "function"
+                                and math.max(0, math.floor(tonumber(getCharArmour(ped)) or 0)) or 0
+                            local armaId = type(getCurrentCharWeapon) == "function"
+                                and tonumber(getCurrentCharWeapon(ped)) or 0
+                            local detalhes = string.format("Vida: %d | Colete: %d | %s",
+                                vida, colete,
+                                _G.HZNomesArmasVisualPc[armaId] or ("Arma " .. tostring(armaId)))
+                            local larguraDetalhes = type(renderGetFontDrawTextLength) == "function"
+                                and renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, detalhes) or 0
+                            renderFontDrawText(_G.HZVisualStaffFontePc, detalhes,
+                                sx - larguraDetalhes / 2, sy - 8, 0xFFFFFFFF)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function uiApplyWindowTheme()
     local c, v = 0, 0
 
@@ -3797,7 +3869,8 @@ _G.HZModulosUI = {
     { "monitoramento", "MONITORAMENTO", "Alertas e jogadores monitorados." },
     { "atendimento", "ATENDIMENTO", "Cronometro visual de suporte." },
     { "camera_staff", "CAMERA STAFF", "Camera livre e comandos staff." },
-    { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." }
+    { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." },
+    { "visual_staff", "VISUAL STAFF", "Nomes ate 500m; Adm+ ve vida, colete e arma." }
 }
 
 function _G.HZEscalaMods()
@@ -3895,7 +3968,8 @@ _G.HZAutoNovoComando = nil
 _G.HZModsCategorias = {
     { "PAINEIS", "Painel TV, atendimento e monitoramento.", { "painel_tv", "atendimento", "monitoramento" } },
     { "NAVEGACAO", "Atalhos para navegar entre jogadores.", { "navegacao_tv" } },
-    { "FERRAMENTAS", "Camera e rotinas automaticas da staff.", { "camera_staff", "automacoes_staff" } }
+    { "FERRAMENTAS", "Camera, visual e rotinas automaticas da staff.",
+        { "camera_staff", "visual_staff", "automacoes_staff" } }
 }
 
 function _G.HZAbrirPainelAutomacoes()
@@ -3914,14 +3988,10 @@ function _G.HZAbrirPainelAutomacoes()
     if _G.HZFecharPainelMods then _G.HZFecharPainelMods() end
 
     local estadoSaciarme = configSistema.automacaoSaciarme ~= false and "ATIVO" or "DESATIVADO"
-    local estadoMensagens = configSistema.automacaoMensagens ~= false and "ATIVO" or "DESATIVADO"
     local texto = table.concat({
         "{48C6FF}/SACIARME AUTOMATICO  " ..
             (estadoSaciarme == "ATIVO" and "{3EDC81}" or "{FFB347}") .. "[" .. estadoSaciarme ..
-            "] {A8B5C8}- 30 segundos; depois 15 em 15 minutos.",
-        "{48C6FF}MENSAGENS AUTOMATICAS  " ..
-            (estadoMensagens == "ATIVO" and "{3EDC81}" or "{FFB347}") .. "[" .. estadoMensagens ..
-            "] {A8B5C8}- Mensagens do cargo no /A."
+            "] {A8B5C8}- 30 segundos; depois 15 em 15 minutos."
     }, "\n")
     sampShowDialog(_G.HZDialogAutomacoesId,
         "SETOR ADVANCED - AUTOMACOES STAFF",
@@ -4025,6 +4095,40 @@ end
 function _G.HZSalvarAutomacoesPersonalizadas()
     _G.HZAutoPersonalizadasProximas = {}
     salvarConfigSistema(true)
+end
+
+function _G.HZMigrarMensagensInternasSetorAuto(cargo)
+    local role = getStaffSupportRole(cargo or cargoAdmin)
+    local data = role and staffSupportData[role] or nil
+    if not role or not data or type(data.messages) ~= "table" then return false end
+    local chaveMigracao = "mensagensSetorAuto_" .. tostring(role)
+    if configSistema[chaveMigracao] == true then return true end
+
+    local lista = _G.HZAutoLista()
+    local ciclo = math.max(600, #data.messages * 600)
+    for indice, mensagem in ipairs(data.messages) do
+        local existe = false
+        for _, item in ipairs(lista) do
+            if tostring(item.comando or "") == tostring(mensagem) then
+                existe = true
+                break
+            end
+        end
+        if not existe then
+            lista[#lista + 1] = {
+                comando = tostring(mensagem),
+                intervalo = ciclo,
+                atrasoInicial = 30 + ((indice - 1) * 600),
+                ativo = configSistema.automacaoMensagens ~= false
+            }
+        end
+    end
+    configSistema[chaveMigracao] = true
+    -- A opcao antiga deixa de controlar envios; tudo passa pelo /setorauto.
+    configSistema.automacaoMensagens = false
+    _G.HZSalvarAutomacoesPersonalizadas()
+    sampAddChatMessage("{3EDC81}[SETOR AUTO] Mensagens do cargo migradas para /setorauto.", -1)
+    return true
 end
 
 function _G.HZAbrirModsDialog(tela)
@@ -5314,6 +5418,26 @@ local function setor_main()
         end)
     end
 
+    if not _G.HZVisualStaffRenderIniciado then
+        _G.HZVisualStaffRenderIniciado = true
+        lua_thread.create(function()
+            while true do
+                wait(0)
+                local ok, erro = pcall(_G.HZDesenharVisualStaffPc)
+                if not ok and not _G.HZVisualStaffErroAvisadoPc then
+                    _G.HZVisualStaffErroAvisadoPc = true
+                    configSistema.modulos.visual_staff = false
+                    salvarConfigSistema(true)
+                    print("[SETOR PC] Visual Staff desativado por incompatibilidade: " .. tostring(erro))
+                    sampAddChatMessage(
+                        "{FF6B6B}[SETOR] Visual Staff desativado: incompatibilidade detectada neste PC.",
+                        -1
+                    )
+                end
+            end
+        end)
+    end
+
     -- LOOP PRINCIPAL
     while true do
         -- O sistema nao precisa executar milhares de verificacoes por segundo.
@@ -6521,7 +6645,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.21",
+    versao = "2.24",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
