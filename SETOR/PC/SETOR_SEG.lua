@@ -1268,6 +1268,12 @@ local function paineltv_parse_info(text)
                 id=tonumber(novoId), nick=tostring(nickTelado or ""),
                 vida=nil, colete=nil, capacete=nil, arma=nil
             }
+            -- Algumas versões enviam VIDA/COLETE/CAPACETE antes da linha ID.
+            -- Reprocessa o mapa já recebido e vincula os valores ao novo alvo.
+            if _G.HZVisualRegistrarTextdrawPc then
+                _G.HZVisualRegistrarTextdrawPc("global", nil, nil, nil, true)
+                _G.HZVisualRegistrarTextdrawPc("player", nil, nil, nil, true)
+            end
             if voltarPrincipalAoTrocarTelado then
                 menuAtual = "principal"
                 aguardandoConfirmBanPerm = false
@@ -1294,14 +1300,16 @@ _G.HZVisualTextdrawMapaPc = _G.HZVisualTextdrawMapaPc or {global={}, player={}}
 function _G.HZVisualRegistrarTextdrawPc(grupo, id, texto, dados)
     grupo = grupo == "player" and "player" or "global"
     local mapa = _G.HZVisualTextdrawMapaPc[grupo]
-    local chave = tonumber(id) or 0
-    local anterior = mapa[chave] or {}
-    local posicao = type(dados) == "table" and dados.position or nil
-    mapa[chave] = {
-        texto=tostring(texto or ""),
-        x=tonumber(type(posicao) == "table" and (posicao.x or posicao[1]) or anterior.x),
-        y=tonumber(type(posicao) == "table" and (posicao.y or posicao[2]) or anterior.y)
-    }
+    if id ~= nil then
+        local chave = tonumber(id) or 0
+        local anterior = mapa[chave] or {}
+        local posicao = type(dados) == "table" and dados.position or nil
+        mapa[chave] = {
+            texto=tostring(texto or ""),
+            x=tonumber(type(posicao) == "table" and (posicao.x or posicao[1]) or anterior.x),
+            y=tonumber(type(posicao) == "table" and (posicao.y or posicao[2]) or anterior.y)
+        }
+    end
 
     local itens = {}
     for tdId, item in pairs(mapa) do
@@ -3879,6 +3887,12 @@ _G.HZNomesArmasVisualPc = _G.HZNomesArmasVisualPc or {
     [46]="Paraquedas"
 }
 
+_G.HZModelosMotoVisualPc = _G.HZModelosMotoVisualPc or {
+    [448]=true,[461]=true,[462]=true,[463]=true,[468]=true,
+    [471]=true,[481]=true,[509]=true,[510]=true,[521]=true,
+    [522]=true,[523]=true,[581]=true,[586]=true
+}
+
 function _G.HZDesenharVisualStaffPc()
     if not _G.HZModuloAtivo("visual_staff") then return end
     if type(renderFontDrawText) ~= "function"
@@ -3920,6 +3934,53 @@ function _G.HZDesenharVisualStaffPc()
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 750 then
                     local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
+                    if emVeiculo then
+                        local carro, assento = nil, nil
+                        if type(storeCarCharIsInNoSave) == "function" then
+                            local okCarro, valorCarro = pcall(storeCarCharIsInNoSave, ped)
+                            if okCarro then carro = valorCarro end
+                        end
+                        if carro and type(getDriverOfCar) == "function" then
+                            local okMotorista, motorista = pcall(getDriverOfCar, carro)
+                            if okMotorista and motorista == ped then assento = -1 end
+                        end
+                        if carro and assento == nil
+                            and type(getCharInCarPassengerSeat) == "function" then
+                            for lugar = 0, 7 do
+                                local okLugar, ocupante = pcall(
+                                    getCharInCarPassengerSeat, carro, lugar)
+                                if okLugar and ocupante == ped then
+                                    assento = lugar
+                                    break
+                                end
+                            end
+                        end
+                        if carro and assento ~= nil
+                            and type(getOffsetFromCarInWorldCoords) == "function" then
+                            local modelo = type(getCarModel) == "function"
+                                and tonumber(getCarModel(carro)) or 0
+                            local ox, oy, oz
+                            if _G.HZModelosMotoVisualPc[modelo] then
+                                -- Moto: ocupantes ficam no mesmo eixo, separados
+                                -- apenas para frente/tras conforme o assento.
+                                ox = 0
+                                oy = assento == -1 and 0.22 or -0.48
+                                oz = 1.28
+                            else
+                                -- Carro: separacao curta e proporcional aos bancos.
+                                local lado = assento == -1 and -0.38
+                                    or ((assento % 2 == 0) and 0.38 or -0.38)
+                                local fila = assento <= 0 and 0.22
+                                    or (-0.48 - math.floor((assento - 1) / 2) * 0.52)
+                                ox, oy, oz = lado, fila, 1.28
+                            end
+                            local okPonto, vx, vy, vz = pcall(
+                                getOffsetFromCarInWorldCoords, carro, ox, oy, oz)
+                            if okPonto and vx and vy and vz then
+                                pontoX, pontoY, pontoZ = vx, vy, vz
+                            end
+                        end
+                    end
                     local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
                     if sx and sy then
                         local nome = tostring(sampGetPlayerNickname(item.id) or "?")
@@ -3971,7 +4032,7 @@ function _G.HZDesenharVisualStaffPc()
                             local capacete = nil
                             local statsTd = _G.HZVisualTextdrawAtual or {}
                             local ehTelado = tonumber(item.id) == tonumber(idTelado)
-                            if ehTelado and tonumber(statsTd.id) == tonumber(item.id) then
+                            if ehTelado then
                                 -- O painel do servidor conhece valores customizados
                                 -- acima de 100; a sincronizacao comum do SA-MP nao.
                                 if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
@@ -6874,7 +6935,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.42",
+    versao = "2.44",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
