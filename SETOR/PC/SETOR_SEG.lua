@@ -1262,6 +1262,12 @@ local function paineltv_parse_info(text)
 
         -- Aplicar configs ao trocar telado
         if trocouTelado then
+            -- Descarta os dados exatos do alvo anterior. As linhas VIDA,
+            -- COLETE e CAPACETE do novo painel preencherão esta estrutura.
+            _G.HZVisualTextdrawAtual = {
+                id=tonumber(novoId), nick=tostring(nickTelado or ""),
+                vida=nil, colete=nil, capacete=nil, arma=nil
+            }
             if voltarPrincipalAoTrocarTelado then
                 menuAtual = "principal"
                 aguardandoConfirmBanPerm = false
@@ -1283,9 +1289,102 @@ local function paineltv_parse_info(text)
     end
 end
 
-local function paineltv_onShowTextDraw(id, data) if data.text then paineltv_parse_info(data.text) end end
+_G.HZVisualTextdrawMapaPc = _G.HZVisualTextdrawMapaPc or {global={}, player={}}
+
+function _G.HZVisualRegistrarTextdrawPc(grupo, id, texto, dados)
+    grupo = grupo == "player" and "player" or "global"
+    local mapa = _G.HZVisualTextdrawMapaPc[grupo]
+    local chave = tonumber(id) or 0
+    local anterior = mapa[chave] or {}
+    local posicao = type(dados) == "table" and dados.position or nil
+    mapa[chave] = {
+        texto=tostring(texto or ""),
+        x=tonumber(type(posicao) == "table" and (posicao.x or posicao[1]) or anterior.x),
+        y=tonumber(type(posicao) == "table" and (posicao.y or posicao[2]) or anterior.y)
+    }
+
+    local itens = {}
+    for tdId, item in pairs(mapa) do
+        if type(item) == "table" then
+            itens[#itens + 1] = {
+                id=tonumber(tdId) or 0,
+                texto=tostring(item.texto or ""):gsub("{%x%x%x%x%x%x}", "")
+                    :gsub("~.-~", ""):gsub("_", " "):gsub("%s+", " "),
+                x=tonumber(item.x), y=tonumber(item.y)
+            }
+        end
+    end
+    table.sort(itens, function(a, b) return a.id < b.id end)
+
+    local function campo(textoTd)
+        local t = tostring(textoTd or ""):match("^%s*(.-)%s*$"):lower():gsub(":%s*$", "")
+        if t == "vida" then return "vida" end
+        if t == "colete" then return "colete" end
+        if t == "capacete" then return "capacete" end
+        return nil
+    end
+    local function numero(textoTd)
+        local t = tostring(textoTd or ""):match("^%s*(.-)%s*$"):gsub(",", ".")
+        return tonumber(t:match("^([%+%-]?%d+%.?%d*)%%?$"))
+    end
+
+    local encontrados = {}
+    for indice, rotulo in ipairs(itens) do
+        local nomeCampo = campo(rotulo.texto)
+        if nomeCampo then
+            local melhor, distanciaMelhor
+            if rotulo.x and rotulo.y then
+                for _, candidato in ipairs(itens) do
+                    local valor = numero(candidato.texto)
+                    if valor and valor >= 0 and valor <= 250
+                        and candidato.x and candidato.y and candidato.x >= rotulo.x
+                        and math.abs(candidato.y - rotulo.y) <= 5 then
+                        local distancia = math.abs(candidato.x - rotulo.x)
+                            + math.abs(candidato.y - rotulo.y) * 4
+                        if candidato.id ~= rotulo.id
+                            and (not distanciaMelhor or distancia < distanciaMelhor) then
+                            melhor, distanciaMelhor = valor, distancia
+                        end
+                    end
+                end
+            end
+            if melhor ~= nil then encontrados[nomeCampo] = melhor end
+            for proximo = indice + 1, math.min(#itens, indice + 24) do
+                if encontrados[nomeCampo] ~= nil then break end
+                local candidato = itens[proximo]
+                if candidato.id - rotulo.id > 32 or campo(candidato.texto) then break end
+                local valor = numero(candidato.texto)
+                if valor and valor >= 0 and valor <= 250 then
+                    encontrados[nomeCampo] = valor
+                    break
+                end
+            end
+        end
+    end
+
+    if next(encontrados) then
+        _G.HZVisualTextdrawAtual = _G.HZVisualTextdrawAtual or {}
+        _G.HZVisualTextdrawAtual.id = tonumber(idTelado)
+        _G.HZVisualTextdrawAtual.nick = tostring(nickTelado or "")
+        for nomeCampo, valor in pairs(encontrados) do
+            _G.HZVisualTextdrawAtual[nomeCampo] = valor
+        end
+    end
+end
+
+local function paineltv_onShowTextDraw(id, data)
+    if data.text then
+        paineltv_parse_info(data.text)
+        _G.HZVisualRegistrarTextdrawPc("global", id, data.text, data)
+    end
+end
 local function paineltv_onTextDrawSetString(id, text) paineltv_parse_info(text) end
-local function paineltv_onShowPlayerTextDraw(playerId, data) if data.text then paineltv_parse_info(data.text) end end
+local function paineltv_onShowPlayerTextDraw(playerId, data)
+    if data.text then
+        paineltv_parse_info(data.text)
+        _G.HZVisualRegistrarTextdrawPc("player", playerId, data.text, data)
+    end
+end
 local function paineltv_onPlayerTextDrawSetString(playerId, id, text) paineltv_parse_info(text) end
 
 function _G.HZPainelTVEncerrarTelagem()
@@ -3812,7 +3911,6 @@ function _G.HZDesenharVisualStaffPc()
 
     local px, py, pz = getCharCoordinates(PLAYER_PED)
     local nivel = _G.HZNivelCargo(cargoAdmin)
-    local posicoesVeiculoNaTela = {}
     for _, item in ipairs(_G.HZVisualStaffJogadoresPc) do
         if sampIsPlayerConnected(item.id) then
             local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
@@ -3822,63 +3920,8 @@ function _G.HZDesenharVisualStaffPc()
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 750 then
                     local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
-                    if emVeiculo then
-                        local carro, assento = nil, nil
-                        if type(storeCarCharIsInNoSave) == "function" then
-                            local okCarro, valorCarro = pcall(storeCarCharIsInNoSave, ped)
-                            if okCarro then carro = valorCarro end
-                        end
-                        if carro and type(getDriverOfCar) == "function" then
-                            local okMotorista, motorista = pcall(getDriverOfCar, carro)
-                            if okMotorista and motorista == ped then assento = -1 end
-                        end
-                        if carro and assento == nil
-                            and type(getCharInCarPassengerSeat) == "function" then
-                            for indiceAssento = 0, 7 do
-                                local okLugar, ocupante = pcall(
-                                    getCharInCarPassengerSeat, carro, indiceAssento)
-                                if okLugar and ocupante == ped then
-                                    assento = indiceAssento
-                                    break
-                                end
-                            end
-                        end
-                        if carro and assento ~= nil
-                            and type(getOffsetFromCarInWorldCoords) == "function" then
-                            local posicoes = {
-                                [-1]={-0.62, 0.28, 1.35}, [0]={0.62, 0.28, 1.35},
-                                [1]={-0.62, -0.62, 1.35}, [2]={0.62, -0.62, 1.35},
-                                [3]={-0.62, -1.25, 1.35}, [4]={0.62, -1.25, 1.35}
-                            }
-                            local pos = posicoes[assento]
-                                or {(assento % 2 == 0) and 0.62 or -0.62,
-                                    -1.25 - math.floor(assento / 2) * 0.55, 1.35}
-                            local okPonto, ox, oy, oz = pcall(
-                                getOffsetFromCarInWorldCoords, carro, pos[1], pos[2], pos[3])
-                            if okPonto and ox and oy and oz then
-                                pontoX, pontoY, pontoZ = ox, oy, oz
-                            end
-                        elseif type(getOffsetFromCharInWorldCoords) == "function" then
-                            local okPonto, ox, oy, oz = pcall(
-                                getOffsetFromCharInWorldCoords, ped, 0.0, 0.0, 1.15)
-                            if okPonto and ox and oy and oz then
-                                pontoX, pontoY, pontoZ = ox, oy, oz
-                            end
-                        end
-                    end
                     local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
                     if sx and sy then
-                        if emVeiculo then
-                            local deslocamento = 0
-                            for _, posicao in ipairs(posicoesVeiculoNaTela) do
-                                if math.abs(sx - posicao.x) < 45
-                                    and math.abs((sy + deslocamento) - posicao.y) < 14 then
-                                    deslocamento = deslocamento - 16
-                                end
-                            end
-                            sy = sy + deslocamento
-                            posicoesVeiculoNaTela[#posicoesVeiculoNaTela + 1] = {x=sx, y=sy}
-                        end
                         local nome = tostring(sampGetPlayerNickname(item.id) or "?")
                         if type(sampIsPlayerPaused) == "function" then
                             local okPausa, pausado = pcall(sampIsPlayerPaused, item.id)
@@ -3927,15 +3970,20 @@ function _G.HZDesenharVisualStaffPc()
                             -- esse campo na estrutura padrão do SA-MP.
                             local capacete = nil
                             local statsTd = _G.HZVisualTextdrawAtual or {}
-                            if tonumber(statsTd.id) == tonumber(item.id)
-                                and tostring(statsTd.nick or ""):lower()
-                                    == tostring(sampGetPlayerNickname(item.id) or ""):lower() then
+                            local ehTelado = tonumber(item.id) == tonumber(idTelado)
+                            if ehTelado and tonumber(statsTd.id) == tonumber(item.id) then
+                                -- O painel do servidor conhece valores customizados
+                                -- acima de 100; a sincronizacao comum do SA-MP nao.
+                                if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
+                                if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
                                 capacete = tonumber(statsTd.capacete)
                             end
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if mostrarStatus then
-                                local vidaTexto = tostring(math.min(250, vida)) .. "%"
+                                local vidaTexto = (not ehTelado and vida >= 100)
+                                    and "+100%"
+                                    or (tostring(math.min(250, vida)) .. "%")
                                 local coleteTexto = tostring(math.min(250, colete)) .. "%"
                                 local capaceteTexto = capacete
                                     and (tostring(math.min(250, math.floor(capacete))) .. "%") or nil
@@ -6826,7 +6874,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.38",
+    versao = "2.42",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7341,19 +7389,35 @@ function samp.onServerMessage(color, text)
 end
 
 function sampev.onShowTextDraw(id, data)
-    if type(data) == "table" then _G.HZEnfileirarTextdraw(data.text) end
+    if type(data) == "table" then
+        _G.HZEnfileirarTextdraw(data.text)
+        if _G.HZVisualRegistrarTextdrawPc then
+            _G.HZVisualRegistrarTextdrawPc("global", id, data.text, data)
+        end
+    end
 end
 
 function sampev.onTextDrawSetString(id, text)
     _G.HZEnfileirarTextdraw(text)
+    if _G.HZVisualRegistrarTextdrawPc then
+        _G.HZVisualRegistrarTextdrawPc("global", id, text)
+    end
 end
 
 function sampev.onShowPlayerTextDraw(playerId, data)
-    if type(data) == "table" then _G.HZEnfileirarTextdraw(data.text) end
+    if type(data) == "table" then
+        _G.HZEnfileirarTextdraw(data.text)
+        if _G.HZVisualRegistrarTextdrawPc then
+            _G.HZVisualRegistrarTextdrawPc("player", playerId, data.text, data)
+        end
+    end
 end
 
 function sampev.onPlayerTextDrawSetString(playerId, id, text)
     _G.HZEnfileirarTextdraw(text)
+    if _G.HZVisualRegistrarTextdrawPc then
+        _G.HZVisualRegistrarTextdrawPc("player", id, text)
+    end
 end
 
 function samp.onPlayerQuit(id, reason)
