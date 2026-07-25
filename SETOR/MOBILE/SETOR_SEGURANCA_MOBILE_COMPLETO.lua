@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.67'
+local VERSION = '3.68'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -53,7 +53,8 @@ local cfg = inicfg.load({
     modulos = {
         painel_tv = true, navegacao_tv = true,
         monitoramento = true, acoes_staff = true, atendimento = true,
-        automacoes_staff = true, visual_staff = false, logs = true
+        automacoes_staff = true, visual_staff = false,
+        visual_nomes = true, visual_status = true, visual_arma = true, logs = true
     },
     automacoes = { total = 0 }
 }, CONFIG_FILE)
@@ -103,6 +104,9 @@ if cfg.modulos.monitoramento == nil then cfg.modulos.monitoramento = true end
 if cfg.modulos.atendimento == nil then cfg.modulos.atendimento = true end
 if cfg.modulos.automacoes_staff == nil then cfg.modulos.automacoes_staff = true end
 if cfg.modulos.visual_staff == nil then cfg.modulos.visual_staff = false end
+if cfg.modulos.visual_nomes == nil then cfg.modulos.visual_nomes = true end
+if cfg.modulos.visual_status == nil then cfg.modulos.visual_status = true end
+if cfg.modulos.visual_arma == nil then cfg.modulos.visual_arma = true end
 -- Logs sao obrigatorios para toda a staff e nao podem ser desativados.
 cfg.modulos.logs = true
 inicfg.save(cfg, CONFIG_FILE)
@@ -491,7 +495,7 @@ local MODULOS_INFO = {
     monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
     acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3},
     automacoes_staff = {'AUTOMACOES STAFF', 'Ativa ou pausa todos os anuncios do /setorauto.', 1},
-    visual_staff = {'VISUAL STAFF', 'Nomes ate 500m; Adm+ ve vida, colete e arma fora do veiculo.', 2}
+    visual_staff = {'VISUAL STAFF', 'Exibe informacoes dos players.', 1}
 }
 
 local MODULOS_CATEGORIAS = {
@@ -959,30 +963,39 @@ local function desenharVisualStaff()
                 local distancia = math.sqrt(dx * dx + dy * dy + dz * dz)
                 if distancia <= 500 then
                     local emVeiculo = type(isCharInAnyCar) == 'function' and isCharInAnyCar(ped)
-                    local altura = emVeiculo and 1.65 or 1.15
-                    local sx, sy = convert3DCoordsToScreen(x, y, z + altura)
+                    local sx, sy = convert3DCoordsToScreen(x, y, z + 1.10)
                     if sx and sy then
                         local nick = tostring(sampGetPlayerNickname(item.id) or '?')
                         local cor = 0xFFFFFFFF
                         local largura = type(renderGetFontDrawTextLength) == 'function'
                             and renderGetFontDrawTextLength(visualStaffFonte, nick) or 0
-                        local nomeY = emVeiculo and (sy - 10) or (sy - 27)
-                        renderFontDrawText(visualStaffFonte, nick, sx - largura / 2, nomeY, cor)
+                        if cfg.modulos.visual_nomes ~= false then
+                            renderFontDrawText(visualStaffFonte, nick,
+                                sx - largura / 2, sy - 60, cor)
+                        end
 
-                        if nivel >= 3 and not emVeiculo then
+                        if nivel >= 2 and not emVeiculo
+                            and (cfg.modulos.visual_status ~= false
+                                or cfg.modulos.visual_arma ~= false) then
                             local vida = type(getCharHealth) == 'function'
                                 and math.max(0, math.floor(tonumber(getCharHealth(ped)) or 0)) or 0
                             local colete = type(getCharArmour) == 'function'
                                 and math.max(0, math.floor(tonumber(getCharArmour(ped)) or 0)) or 0
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            local detalhes = string.format('Vida: %d | Colete: %d | %s',
-                                vida, colete,
-                                NOMES_ARMAS_VISUAL[armaId] or ('Arma ' .. tostring(armaId)))
+                            local partes = {}
+                            if cfg.modulos.visual_status ~= false then
+                                partes[#partes + 1] = string.format('Vida: %d | Colete: %d', vida, colete)
+                            end
+                            if cfg.modulos.visual_arma ~= false then
+                                partes[#partes + 1] =
+                                    NOMES_ARMAS_VISUAL[armaId] or ('Arma ' .. tostring(armaId))
+                            end
+                            local detalhes = table.concat(partes, ' | ')
                             local larguraDetalhes = type(renderGetFontDrawTextLength) == 'function'
                                 and renderGetFontDrawTextLength(visualStaffFonte, detalhes) or 0
                             renderFontDrawText(visualStaffFonte, detalhes,
-                                sx - larguraDetalhes / 2, sy - 13, 0xFFFFFFFF)
+                                sx - larguraDetalhes / 2, sy - 74, 0xFFFFFFFF)
                         end
                     end
                 end
@@ -1752,6 +1765,28 @@ local function abrirListaMonitorados()
 end
 _G.HZMobileAbrirListaMonitorados = abrirListaMonitorados
 
+function _G.HZMobileAbrirVisualStaff()
+    if not exigirStaff('Visual Staff') then return end
+    local nivel = nivelCargo(cfg.dados.cargo)
+    local linhas, ids = {}, {}
+    local function adicionar(id, titulo)
+        ids[#ids + 1] = id
+        local ativo = cfg.modulos[id] ~= false
+        linhas[#linhas + 1] = string.format('{FFFFFF}%s  %s[%s]',
+            titulo, ativo and '{3EDC81}' or '{FFB347}',
+            ativo and 'ATIVO' or 'DESATIVADO')
+    end
+    adicionar('visual_staff', 'ATIVAR VISUAL STAFF')
+    adicionar('visual_nomes', 'NOMES')
+    if nivel >= 2 then
+        adicionar('visual_status', 'VIDA E COLETE')
+        adicionar('visual_arma', 'ARMA')
+    end
+    _G.HZMobileVisualIds = ids
+    dialogoMods(28024, 'SETOR ADVANCED | VISUAL STAFF',
+        table.concat(linhas, '\n'), 'ALTERAR', 'VOLTAR')
+end
+
 local function abrirModulos(categoriaNome)
     if not exigirStaff('/mods') then return end
     local linhas = {}
@@ -2175,7 +2210,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     end
     if _G.HZMobileProcessarRespostaReport(dialogId, button, listboxId, input) then return end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > D_SELETOR_COMANDO then return end
+    if dialogId < D_MAIN or dialogId > 28024 then return end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
@@ -2221,6 +2256,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             lua_thread.create(function() wait(150) abrirModulos() end)
             return false
         end
+        if dialogId == 28024 then
+            lua_thread.create(function() wait(150) abrirModulos('FERRAMENTAS') end)
+            return false
+        end
         if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or
            dialogId == D_INPUT_RG_BUSCA or dialogId == D_INPUT_RG_DEL then
             abrirPrincipal()
@@ -2242,12 +2281,22 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if id then
             if not moduloPermitido(id) then
                 chat('{FF5555}', 'Funcao bloqueada para o cargo ' .. tostring(cfg.dados.cargo) .. '.')
+            elseif id == 'visual_staff' then
+                lua_thread.create(function() wait(150) _G.HZMobileAbrirVisualStaff() end)
+                return false
             else
                 cfg.modulos[id] = cfg.modulos[id] == false
                 inicfg.save(cfg, CONFIG_FILE)
             end
             lua_thread.create(function() wait(150) abrirModulos(modsCategoriaAtual) end)
         end
+    elseif dialogId == 28024 then
+        local id = (_G.HZMobileVisualIds or {})[(tonumber(listboxId) or -1) + 1]
+        if id then
+            cfg.modulos[id] = cfg.modulos[id] == false
+            inicfg.save(cfg, CONFIG_FILE)
+        end
+        lua_thread.create(function() wait(150) _G.HZMobileAbrirVisualStaff() end)
     elseif dialogId == D_SELETOR_TV then
         local jogador = jogadoresSeletorTV[(tonumber(listboxId) or -1) + 1]
         if jogador then
