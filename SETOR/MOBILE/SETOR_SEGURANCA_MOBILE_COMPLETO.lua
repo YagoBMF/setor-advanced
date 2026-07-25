@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.61'
+local VERSION = '3.62'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -53,7 +53,7 @@ local cfg = inicfg.load({
     modulos = {
         painel_tv = true, navegacao_tv = true,
         monitoramento = true, acoes_staff = true, atendimento = true,
-        automacoes_staff = true, logs = true
+        automacoes_staff = true, visual_staff = false, logs = true
     },
     automacoes = { total = 0 }
 }, CONFIG_FILE)
@@ -102,6 +102,7 @@ if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
 if cfg.modulos.monitoramento == nil then cfg.modulos.monitoramento = true end
 if cfg.modulos.atendimento == nil then cfg.modulos.atendimento = true end
 if cfg.modulos.automacoes_staff == nil then cfg.modulos.automacoes_staff = true end
+if cfg.modulos.visual_staff == nil then cfg.modulos.visual_staff = false end
 -- Logs sao obrigatorios para toda a staff e nao podem ser desativados.
 cfg.modulos.logs = true
 inicfg.save(cfg, CONFIG_FILE)
@@ -489,13 +490,15 @@ local MODULOS_INFO = {
     navegacao_tv = {'NAVEGACAO TV', 'Selecao e atalhos entre jogadores.', 2},
     monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
     acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3},
-    automacoes_staff = {'AUTOMACOES STAFF', 'Ativa ou pausa todos os anuncios do /setorauto.', 1}
+    automacoes_staff = {'AUTOMACOES STAFF', 'Ativa ou pausa todos os anuncios do /setorauto.', 1},
+    visual_staff = {'VISUAL STAFF', 'Nomes ate 500m; Adm+ tambem ve vida, colete e arma.', 2}
 }
 
 local MODULOS_CATEGORIAS = {
     {'PAINEIS', 'Atendimento rapido, Painel TV e punicoes.', {'atendimento', 'painel_tv'}},
     {'NAVEGACAO', 'Selecao e navegacao de jogadores.', {'navegacao_tv'}},
-    {'FERRAMENTAS', 'Monitoramento, acoes e automacoes.', {'monitoramento', 'acoes_staff', 'automacoes_staff'}}
+    {'FERRAMENTAS', 'Monitoramento, acoes e automacoes.',
+        {'monitoramento', 'acoes_staff', 'automacoes_staff', 'visual_staff'}}
 }
 
 local function moduloPermitido(id)
@@ -892,6 +895,86 @@ local function desenharPainelTvFlutuante()
     renderFontDrawText(painelTvFonte, '{FFFFFF}PUNIR', x + 81, y + 82, 0xFFFFFFFF)
     renderFontDrawText(painelTvFonte, '{FFFFFF}ACOES', x + 146, y + 82, 0xFFFFFFFF)
     renderFontDrawText(painelTvFonte, '{FFFFFF}OFF', x + 221, y + 82, 0xFFFFFFFF)
+end
+
+local visualStaffFonte, visualStaffProximaVarredura = nil, 0
+local visualStaffJogadores = {}
+local NOMES_ARMAS_VISUAL = {
+    [0]='Desarmado', [1]='Soco ingles', [2]='Taco de golfe', [3]='Cassetete',
+    [4]='Faca', [5]='Taco', [6]='Pa', [7]='Taco de sinuca', [8]='Katana',
+    [9]='Motosserra', [16]='Granada', [17]='Gas', [18]='Molotov',
+    [22]='Pistola', [23]='Pistola silenciada', [24]='Desert Eagle',
+    [25]='Shotgun', [26]='Sawnoff', [27]='Combat Shotgun', [28]='Uzi',
+    [29]='MP5', [30]='AK-47', [31]='M4', [32]='Tec-9',
+    [33]='Rifle', [34]='Sniper', [35]='RPG', [37]='Lanca-chamas',
+    [38]='Minigun', [41]='Spray', [42]='Extintor', [43]='Camera',
+    [46]='Paraquedas'
+}
+
+local function desenharVisualStaff()
+    if not staffLogada or not moduloAtivo('visual_staff') then return end
+    if type(renderFontDrawText) ~= 'function'
+        or type(convert3DCoordsToScreen) ~= 'function'
+        or type(sampGetCharHandleBySampPlayerId) ~= 'function' then return end
+
+    if not visualStaffFonte then
+        local criarFonte = type(renderCreateFont) == 'function' and renderCreateFont
+            or (type(renderFontCreate) == 'function' and renderFontCreate)
+        if criarFonte then visualStaffFonte = criarFonte('Arial', 10, 5) end
+    end
+    if not visualStaffFonte then return end
+
+    local agora = relogioAtendimento()
+    if agora >= visualStaffProximaVarredura then
+        visualStaffProximaVarredura = agora + 0.25
+        visualStaffJogadores = {}
+        local maxId = math.max(0, tonumber(sampGetMaxPlayerId(false)) or 0)
+        for id = 0, maxId do
+            if sampIsPlayerConnected(id) then
+                local existe, ped = sampGetCharHandleBySampPlayerId(id)
+                if existe and ped and ped ~= PLAYER_PED then
+                    visualStaffJogadores[#visualStaffJogadores + 1] = {id=id, ped=ped}
+                end
+            end
+        end
+    end
+
+    local px, py, pz = getCharCoordinates(PLAYER_PED)
+    local nivel = nivelCargo(cfg.dados.cargo)
+    for _, item in ipairs(visualStaffJogadores) do
+        if sampIsPlayerConnected(item.id) then
+            local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
+            if existe and ped and type(isCharOnScreen) == 'function' and isCharOnScreen(ped) then
+                local x, y, z = getCharCoordinates(ped)
+                local dx, dy, dz = x - px, y - py, z - pz
+                local distancia = math.sqrt(dx * dx + dy * dy + dz * dz)
+                if distancia <= 500 then
+                    local sx, sy = convert3DCoordsToScreen(x, y, z + 1.15)
+                    if sx and sy then
+                        local nick = tostring(sampGetPlayerNickname(item.id) or '?')
+                            .. ' (' .. tostring(item.id) .. ')'
+                        local cor = 0xFFFFFFFF
+                        local largura = type(renderGetFontDrawTextLength) == 'function'
+                            and renderGetFontDrawTextLength(visualStaffFonte, nick) or 0
+                        renderFontDrawText(visualStaffFonte, nick, sx - largura / 2, sy - 22, cor)
+
+                        if nivel >= 3 then
+                            local vida = math.floor(tonumber(sampGetPlayerHealth(item.id)) or 0)
+                            local colete = math.floor(tonumber(sampGetPlayerArmor(item.id)) or 0)
+                            local armaId = type(getCurrentCharWeapon) == 'function'
+                                and tonumber(getCurrentCharWeapon(ped)) or 0
+                            local detalhes = string.format('Vida: %d | Colete: %d | %s',
+                                vida, colete, NOMES_ARMAS_VISUAL[armaId] or ('Arma ' .. tostring(armaId)))
+                            local larguraDetalhes = type(renderGetFontDrawTextLength) == 'function'
+                                and renderGetFontDrawTextLength(visualStaffFonte, detalhes) or 0
+                            renderFontDrawText(visualStaffFonte, detalhes,
+                                sx - larguraDetalhes / 2, sy - 8, 0xFFFFFFFF)
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function instalarPainelTvMimgui()
@@ -2570,6 +2653,13 @@ function main()
         if not ok then
             painelTvFlutuante = false
             print('[SETOR MOBILE] Painel TV flutuante desativado por incompatibilidade: ' .. tostring(erro))
+        end
+        local okVisual, erroVisual = pcall(desenharVisualStaff)
+        if not okVisual then
+            cfg.modulos.visual_staff = false
+            inicfg.save(cfg, CONFIG_NAME)
+            print('[SETOR MOBILE] Visual Staff desativado por incompatibilidade: ' .. tostring(erroVisual))
+            sampAddChatMessage('[SETOR] Visual Staff desativado: incompatibilidade detectada neste aparelho.', COR_ERRO)
         end
         if painelTvAcaoPendente then
             local acao = painelTvAcaoPendente
