@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.88'
+local VERSION = '3.90'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -114,6 +114,7 @@ cfg.modulos.logs = true
 inicfg.save(cfg, CONFIG_FILE)
 
 local cache, monitorados = {}, {}
+local monitorUltimoAlerta = {}
 local rgAtual, nickAtual = nil, nil
 local visualTextdrawAtual = {id=nil, nick=nil, vida=nil, colete=nil, capacete=nil, arma=nil}
 -- O painel de informacoes do servidor separa alguns rotulos e valores em
@@ -1076,13 +1077,6 @@ local function desenharVisualStaff()
                             -- jogador. TextDraws podem ficar antigos e não devem
                             -- substituir esses valores. Capacete ainda depende do
                             -- TextDraw, pois não faz parte dos dados padrão do SA-MP.
-                            local capacete = nil
-                            local statsTd = visualTextdrawAtual
-                            if tonumber(statsTd.id) == tonumber(item.id)
-                                and tostring(statsTd.nick or ''):lower()
-                                    == tostring(sampGetPlayerNickname(item.id) or ''):lower() then
-                                capacete = tonumber(statsTd.capacete)
-                            end
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if mostrarStatus then
@@ -1093,24 +1087,14 @@ local function desenharVisualStaff()
                                     or (tostring(math.min(250, vida)) .. '%')
                                 local coleteTexto = colete >= 100 and '+100%'
                                     or (tostring(math.min(250, colete)) .. '%')
-                                local capaceteTexto = capacete
-                                    and (tostring(math.min(250, math.floor(capacete))) .. '%') or nil
                                 local larguraVida = renderGetFontDrawTextLength(visualStaffFonte, vidaTexto)
                                 local larguraColete = renderGetFontDrawTextLength(visualStaffFonte, coleteTexto)
-                                local larguraCapacete = capaceteTexto
-                                    and renderGetFontDrawTextLength(visualStaffFonte, capaceteTexto) or 0
                                 local larguraTotal = larguraVida + 8 + larguraColete
-                                    + (capaceteTexto and (8 + larguraCapacete) or 0)
                                 local inicio = sx - larguraTotal / 2
                                 renderFontDrawText(visualStaffFonte, vidaTexto,
                                     inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(visualStaffFonte, coleteTexto,
                                     inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
-                                if capaceteTexto then
-                                    renderFontDrawText(visualStaffFonte, capaceteTexto,
-                                        inicio + larguraVida + 8 + larguraColete + 8,
-                                        statusY, 0xFF48C6FF)
-                                end
                             end
                             if mostrarArma then
                                 local armaTexto = (visualTextdrawAtual.id == item.id
@@ -2922,9 +2906,22 @@ function samp.onServerMessage(color, text)
         end
     end
 
-    for mrg, info in pairs(monitorados) do
-        if ct:lower():find(tostring(info.nick):lower(), 1, true) and (ct:lower():find('entrou', 1, true) or ct:lower():find('conect', 1, true)) then
-            chat('{FFAA00}', 'MONITORADO ONLINE: ' .. info.nick .. ' [RG ' .. mrg .. '] - ' .. info.motivo)
+    local mensagemBaixa = ct:lower()
+    local mensagemConexao = mensagemBaixa:find('entrou no servidor', 1, true)
+        or mensagemBaixa:find('conectou%-se ao servidor')
+        or mensagemBaixa:find('conectou ao servidor', 1, true)
+    if mensagemConexao then
+        local agoraAlerta = os.clock and os.clock() or 0
+        for mrg, info in pairs(monitorados) do
+            local nickBaixo = tostring(info.nick or ''):lower()
+            local ultimo = tonumber(monitorUltimoAlerta[tostring(mrg)]) or -999
+            if nickBaixo ~= ''
+                and mensagemBaixa:find(nickBaixo, 1, true)
+                and agoraAlerta - ultimo >= 60 then
+                monitorUltimoAlerta[tostring(mrg)] = agoraAlerta
+                chat('{FFAA00}', 'MONITORADO ONLINE: ' .. info.nick
+                    .. ' [RG ' .. mrg .. '] - ' .. info.motivo)
+            end
         end
     end
 end
