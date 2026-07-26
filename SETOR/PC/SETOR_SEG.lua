@@ -2149,6 +2149,7 @@ _G.HZMonitorEtapa1.adminAtivo = _G.HZMonitorEtapa1.adminAtivo or false
 _G.HZMonitorEtapa1.adminPendenteAte = _G.HZMonitorEtapa1.adminPendenteAte or 0
 _G.HZMonitorEtapa1.proximaVerificacao = _G.HZMonitorEtapa1.proximaVerificacao or 0
 _G.HZMonitorEtapa1.onlinePorRG = _G.HZMonitorEtapa1.onlinePorRG or {}
+_G.HZMonitorEtapa1.falhasPorRG = _G.HZMonitorEtapa1.falhasPorRG or {}
 _G.HZMonitorEtapa1.inicializadoOnline = _G.HZMonitorEtapa1.inicializadoOnline or false
 
 function _G.HZMonitorEtapa1.prepararCheckbox(rg, nick)
@@ -2334,18 +2335,31 @@ function _G.HZMonitorEtapa1.verificarEntradas(avisarAtuais)
 
     local agora = os.clock()
     if not avisarAtuais and agora < (_G.HZMonitorEtapa1.proximaVerificacao or 0) then return end
-    _G.HZMonitorEtapa1.proximaVerificacao = agora + 1.0
+    -- Cinco segundos evita varrer todos os jogadores a cada frame/segundo.
+    _G.HZMonitorEtapa1.proximaVerificacao = agora + 5.0
 
     local novoEstado = {}
 
     for rg, info in pairs(_G.HZMonitorEtapa1.dados or {}) do
         if type(info) == "table" then
             local id, nick = _G.HZMonitorEtapa1.encontrarOnline(rg, info)
-            local online = id ~= nil
-            novoEstado[tostring(rg)] = online
-            local antes = _G.HZMonitorEtapa1.onlinePorRG[tostring(rg)] == true
+            local chaveRg = tostring(rg)
+            local encontrado = id ~= nil
+            local antes = _G.HZMonitorEtapa1.onlinePorRG[chaveRg] == true
+            if encontrado then
+                _G.HZMonitorEtapa1.falhasPorRG[chaveRg] = 0
+            else
+                _G.HZMonitorEtapa1.falhasPorRG[chaveRg] =
+                    (_G.HZMonitorEtapa1.falhasPorRG[chaveRg] or 0) + 1
+            end
+            -- Uma perda momentanea do cache/stream nao derruba o estado.
+            -- Exige tres verificacoes consecutivas (cerca de 15 segundos).
+            local online = encontrado
+                or (antes and (_G.HZMonitorEtapa1.falhasPorRG[chaveRg] or 0) < 3)
+            novoEstado[chaveRg] = online
 
-            if online and (avisarAtuais or (_G.HZMonitorEtapa1.inicializadoOnline and not antes)) then
+            if encontrado and (avisarAtuais
+                or (_G.HZMonitorEtapa1.inicializadoOnline and not antes)) then
                 _G.HZMonitorEtapa1.notificarEntrada(rg, info, id, nick)
             end
         end
@@ -4029,16 +4043,7 @@ function _G.HZDesenharVisualStaffPc()
                             -- real (por exemplo, mostrar 100 quando o jogador tem 75).
                             -- Capacete continua vindo do TextDraw porque não existe
                             -- esse campo na estrutura padrão do SA-MP.
-                            local capacete = nil
-                            local statsTd = _G.HZVisualTextdrawAtual or {}
                             local ehTelado = tonumber(item.id) == tonumber(idTelado)
-                            if ehTelado then
-                                -- O painel do servidor conhece valores customizados
-                                -- acima de 100; a sincronizacao comum do SA-MP nao.
-                                if tonumber(statsTd.vida) then vida = tonumber(statsTd.vida) end
-                                if tonumber(statsTd.colete) then colete = tonumber(statsTd.colete) end
-                                capacete = tonumber(statsTd.capacete)
-                            end
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
                             if mostrarStatus then
@@ -4046,26 +4051,16 @@ function _G.HZDesenharVisualStaffPc()
                                     and "+100%"
                                     or (tostring(math.min(250, vida)) .. "%")
                                 local coleteTexto = tostring(math.min(250, colete)) .. "%"
-                                local capaceteTexto = capacete
-                                    and (tostring(math.min(250, math.floor(capacete))) .. "%") or nil
                                 local larguraVida =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, vidaTexto)
                                 local larguraColete =
                                     renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
-                                local larguraCapacete = capaceteTexto and
-                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, capaceteTexto) or 0
                                 local larguraTotal = larguraVida + 8 + larguraColete
-                                    + (capaceteTexto and (8 + larguraCapacete) or 0)
                                 local inicio = sx - larguraTotal / 2
                                 renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
                                     inicio, statusY, 0xFFE74C3C)
                                 renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
                                     inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
-                                if capaceteTexto then
-                                    renderFontDrawText(_G.HZVisualStaffFontePc, capaceteTexto,
-                                        inicio + larguraVida + 8 + larguraColete + 8,
-                                        statusY, 0xFF48C6FF)
-                                end
                             end
                             if mostrarArma then
                                 local armaTexto = (tonumber(statsTd.id) == tonumber(item.id)
@@ -5092,7 +5087,7 @@ local function uiPlayerButton(label, selected)
 
     local clicked = imgui.Button(label, imgui.ImVec2(405, 32))
     uiPopColor(pushed)
-    return clicked
+    return "Desconhecido"
 end
 
 
@@ -5143,20 +5138,11 @@ function _G.HZMonitorPanel.fechar()
     end
 end
 
-function _G.HZMonitorPanel.encontrarOnline(info)
-    local nickBusca = normalizarBuscaNome(tostring((info and info.nick) or ""))
-    if nickBusca == "" or nickBusca == "desconhecido" then return nil, nil, nil end
-
-    for id = 0, sampGetMaxPlayerId(false) do
-        if sampIsPlayerConnected(id) then
-            local nick = sampGetPlayerNickname(id) or ""
-            if normalizarBuscaNome(nick) == nickBusca then
-                local level = sampGetPlayerScore and (sampGetPlayerScore(id) or 0) or 0
-                return id, nick, level
-            end
-        end
-    end
-    return nil, nil, nil
+function _G.HZMonitorPanel.encontrarOnline(rg, info)
+    local id, nick = _G.HZMonitorEtapa1.encontrarOnline(rg, info)
+    if id == nil then return nil, nil, nil end
+    local level = sampGetPlayerScore and (sampGetPlayerScore(id) or 0) or 0
+    return id, nick, level
 end
 
 function _G.HZMonitorPanel.remover(rg)
@@ -5258,7 +5244,7 @@ function _G.HZMonitorPanel.desenhar()
     else
         for i, item in ipairs(lista) do
             local rg, info = item.rg, item.info
-            local idOnline, nickOnline, levelOnline = _G.HZMonitorPanel.encontrarOnline(info)
+            local idOnline, nickOnline, levelOnline = _G.HZMonitorPanel.encontrarOnline(rg, info)
             local nick = nickOnline or tostring(info.nick or "Desconhecido")
             local status = idOnline and "ONLINE" or "OFFLINE"
 
@@ -6935,7 +6921,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.44",
+    versao = "2.46",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
