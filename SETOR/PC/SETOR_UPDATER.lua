@@ -50,7 +50,9 @@ local function urlNova(url)
 end
 
 local function baixar(urlApi, urlRaw)
-    local fontes = {{urlApi, GITHUB_OPTIONS}, {urlRaw, nil}}
+    -- O arquivo RAW entrega somente o conteudo. Algumas versoes da biblioteca
+    -- requests ignoram os headers da API e devolvem o JSON de metadados.
+    local fontes = {{urlRaw, nil}, {urlApi, GITHUB_OPTIONS}}
     for _, fonte in ipairs(fontes) do
         if type(fonte[1]) == "string" and fonte[1] ~= "" then
             for tentativa = 1, 3 do
@@ -70,7 +72,13 @@ local function baixar(urlApi, urlRaw)
 end
 
 local function versaoDoCodigo(codigo)
-    return tostring(codigo or ""):match('versao%s*=%s*"([%d%.]+)"')
+    local texto = tostring(codigo or "")
+    return texto:match('versao%s*=%s*"(%d+%.%d+[%d%.]*)"')
+        or texto:match('script_version%s*%(%s*"(%d+%.%d+[%d%.]*)"%s*%)')
+end
+
+local function versaoDoArquivo(texto)
+    return tostring(texto or ""):match("^%s*(%d+%.%d+[%d%.]*)%s*$")
 end
 
 local function comparar(a, b)
@@ -125,7 +133,7 @@ local function instalar(silencioso, forcar)
     lua_thread.create(function()
         if not silencioso then chat("{48C6FF}[SETOR UPDATE]: Consultando GitHub...") end
         local versaoTexto = baixar(VERSAO_URL, VERSAO_RAW_URL)
-        local remota = versaoTexto and versaoTexto:match("([%d%.]+)") or nil
+        local remota = versaoDoArquivo(versaoTexto)
         local instalada = versaoInstalada()
         if not remota then
             consultando = false

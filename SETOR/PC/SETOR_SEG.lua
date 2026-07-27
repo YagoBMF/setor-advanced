@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.59")
+script_version("2.60")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -7083,7 +7083,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.59",
+    versao = "2.60",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7104,7 +7104,9 @@ function _G.HZUpdaterPC.baixar(apiUrl, rawUrl)
         ["User-Agent"] = "Setor-PC-Updater",
         ["X-GitHub-Api-Version"] = "2022-11-28"
     }}
-    local fontes = {{apiUrl, opcoes}, {rawUrl, nil}}
+    -- Prioriza o RAW: certas versoes de requests devolvem o JSON de
+    -- metadados da API mesmo com o header de conteudo bruto.
+    local fontes = {{rawUrl, nil}, {apiUrl, opcoes}}
     for _, fonte in ipairs(fontes) do
         if type(fonte[1]) == "string" and fonte[1] ~= "" then
             local sep = fonte[1]:find("?", 1, true) and "&" or "?"
@@ -7136,7 +7138,7 @@ end
 
 function _G.HZUpdaterPC.obterVersao()
     local corpo = _G.HZUpdaterPC.baixar(_G.HZUpdaterPC.apiVersao, _G.HZUpdaterPC.urlVersao)
-    return corpo and tostring(corpo):match("([%d%.]+)") or nil
+    return corpo and tostring(corpo):match("^%s*(%d+%.%d+[%d%.]*)%s*$") or nil
 end
 
 function _G.HZUpdaterPC.garantirBootstrap()
