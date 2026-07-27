@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.57")
+script_version("2.58")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -5512,6 +5512,42 @@ local function setor_main()
         _G.HZAbrirModsDialog()
     end)
 
+    -- Intercepta /tv diretamente porque algumas combinacoes de SA-MP/MoonLoader
+    -- nao entregam comandos de servidor ao callback geral antes do envio.
+    -- Toda resolucao continua centralizada em resolverPrimeiroArgumentoComoRG.
+    sampRegisterChatCommand("tv", function(arg)
+        if not _G.HZExigirStaff("/tv") then return end
+        if not _G.HZModuloAtivo("painel_tv") then
+            sampAddChatMessage(
+                "{FF6B6B}[MODS] Painel TV esta desligado. Use /mods para ativar.",
+                -1
+            )
+            return
+        end
+
+        local alvoTvDireto = tostring(arg or ""):match("^%s*(.-)%s*$")
+        if alvoTvDireto == "" then
+            sampSendChat("/tv")
+            return
+        end
+
+        if alvoTvDireto:match("^%d+$") then
+            sampSendChat("/tv " .. alvoTvDireto)
+            return
+        end
+
+        local resolvidoTvDireto =
+            resolverPrimeiroArgumentoComoRG("/tv " .. alvoTvDireto)
+        if type(resolvidoTvDireto) == "string" then
+            sampSendChat(resolvidoTvDireto)
+        elseif resolvidoTvDireto ~= false then
+            sampAddChatMessage(
+                "{FF0000}ERRO: Nao foi possivel localizar o jogador online.",
+                -1
+            )
+        end
+    end)
+
     sampRegisterChatCommand("setorcomandos", function()
         if not _G.HZExigirStaff("/setorcomandos") then return end
         _G.HZAbrirSetorComandos()
@@ -7032,7 +7068,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.57",
+    versao = "2.58",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
