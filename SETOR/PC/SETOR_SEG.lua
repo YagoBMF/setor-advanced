@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.58")
+script_version("2.59")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -1713,6 +1713,7 @@ local function abrirSeletorJogador(busca, comandoOriginal)
     seletorJogadorBusca = tostring(busca or "")
     seletorComandoOriginal = comandoOriginal
     seletorJogadorIndice = 1
+    if _G.HZPrepararTeclasSeletor then _G.HZPrepararTeclasSeletor() end
     seletorJogadorAberto.v = true
     imgui.Process = true
 end
@@ -3684,6 +3685,15 @@ local seletorPressDown = false
 local seletorPressEnter = false
 local seletorPressEsc = false
 
+function _G.HZPrepararTeclasSeletor()
+    seletorPressUp = false
+    seletorPressDown = false
+    seletorPressEnter = false
+    seletorPressEsc = false
+    -- Ignora somente o Enter que acabou de enviar o comando no chat.
+    _G.HZSeletorIgnorarEnterAte = (os.clock and os.clock() or 0) + 0.35
+end
+
 local function fecharSeletorJogador()
     salvarConfigSistema(true)
     seletorPressUp = false
@@ -3736,7 +3746,12 @@ local function setor_onWindowMessage(msg, wparam, lparam)
             if ehKeyDown then
                 if wparam == VK_UP then seletorPressUp = true end
                 if wparam == VK_DOWN then seletorPressDown = true end
-                if wparam == VK_RETURN_SELETOR then seletorPressEnter = true end
+                if wparam == VK_RETURN_SELETOR then
+                    local agoraEnter = os.clock and os.clock() or 0
+                    if agoraEnter >= tonumber(_G.HZSeletorIgnorarEnterAte or 0) then
+                        seletorPressEnter = true
+                    end
+                end
                 if wparam == VK_ESCAPE_SELETOR then seletorPressEsc = true end
             end
 
@@ -7068,7 +7083,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.58",
+    versao = "2.59",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
