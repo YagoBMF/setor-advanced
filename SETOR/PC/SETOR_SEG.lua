@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.63")
+script_version("2.65")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -4009,8 +4009,14 @@ function _G.HZDesenharVisualStaffPc()
     for _, item in ipairs(_G.HZVisualStaffJogadoresPc) do
         if sampIsPlayerConnected(item.id) then
             local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
-            if existe and ped and (type(isCharOnScreen) ~= "function" or isCharOnScreen(ped)) then
-                local x, y, z = getCharCoordinates(ped)
+            local naTela = true
+            if existe and ped and type(isCharOnScreen) == "function" then
+                local okTela, valorTela = pcall(isCharOnScreen, ped)
+                naTela = okTela and valorTela == true
+            end
+            if existe and ped and naTela then
+                local okPosicao, x, y, z = pcall(getCharCoordinates, ped)
+                if okPosicao and x and y and z then
                 local dx, dy, dz = x - px, y - py, z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 1000 then
                     local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
@@ -4038,8 +4044,11 @@ function _G.HZDesenharVisualStaffPc()
                         end
                         if carro and assento ~= nil
                             and type(getOffsetFromCarInWorldCoords) == "function" then
-                            local modelo = type(getCarModel) == "function"
-                                and tonumber(getCarModel(carro)) or 0
+                            local modelo = 0
+                            if type(getCarModel) == "function" then
+                                local okModelo, valorModelo = pcall(getCarModel, carro)
+                                if okModelo then modelo = tonumber(valorModelo) or 0 end
+                            end
                             local ox, oy, oz
                             if _G.HZModelosMotoVisualPc[modelo] then
                                 -- Moto: ocupantes ficam no mesmo eixo, separados
@@ -4062,9 +4071,11 @@ function _G.HZDesenharVisualStaffPc()
                             end
                         end
                     end
-                    local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
-                    if sx and sy then
-                        local nome = tostring(sampGetPlayerNickname(item.id) or "?")
+                    local okTela2D, sx, sy =
+                        pcall(convert3DCoordsToScreen, pontoX, pontoY, pontoZ)
+                    if okTela2D and sx and sy then
+                        local okNick, valorNick = pcall(sampGetPlayerNickname, item.id)
+                        local nome = tostring(okNick and valorNick or "?")
                         if type(sampIsPlayerPaused) == "function" then
                             local okPausa, pausado = pcall(sampIsPlayerPaused, item.id)
                             if okPausa and pausado then nome = "|| " .. nome end
@@ -4110,8 +4121,11 @@ function _G.HZDesenharVisualStaffPc()
                             -- real (por exemplo, mostrar 100 quando o jogador tem 75).
                             -- Capacete continua vindo do TextDraw porque não existe
                             -- esse campo na estrutura padrão do SA-MP.
-                            local armaId = type(getCurrentCharWeapon) == "function"
-                                and tonumber(getCurrentCharWeapon(ped)) or 0
+                            local armaId = 0
+                            if type(getCurrentCharWeapon) == "function" then
+                                local okArma, valorArma = pcall(getCurrentCharWeapon, ped)
+                                if okArma then armaId = tonumber(valorArma) or 0 end
+                            end
                             if mostrarStatus and type(renderDrawBox) == "function" then
                                 -- Duas barras discretas: vida a esquerda e colete
                                 -- a direita. Valores acima de 100 mantem a barra cheia.
@@ -4148,6 +4162,7 @@ function _G.HZDesenharVisualStaffPc()
                             end
                         end
                     end
+                end
                 end
             end
         end
@@ -5468,9 +5483,9 @@ local function setor_OnDrawFrame()
                     local okClique, valorClique = pcall(imgui.IsItemClicked, 0)
                     clicouOpcao = okClique and valorClique == true
                 end
-                local agoraSelecao = os.clock and os.clock() or 0
-                if clicouOpcao
-                    and agoraSelecao >= tonumber(_G.HZSeletorPodeSelecionarApos or 0) then
+                -- Clique fisico pode executar imediatamente. A protecao de
+                -- abertura permanece somente para o Enter do chat.
+                if clicouOpcao then
                     seletorJogadorIndice = i
                     executarOpcaoSeletor(p)
                     imgui.EndChild()
@@ -5835,9 +5850,13 @@ local function setor_main()
                     -- durante o desenho. Isso e transitorio e nao significa que a
                     -- DATA seja incompativel; apenas pausa e tenta novamente.
                     _G.HZVisualStaffErrosPc = tonumber(_G.HZVisualStaffErrosPc or 0) + 1
+                    -- Refaz a lista rapidamente; uma troca de jogador/veiculo
+                    -- nao deve apagar o wall inteiro por varios segundos.
+                    _G.HZVisualStaffJogadoresPc = {}
+                    _G.HZVisualStaffProximaVarreduraPc = 0
                     _G.HZVisualStaffBloqueadoAtePc =
-                        (os.clock and os.clock() or 0) + 2
-                    print("[SETOR PC] Visual Staff: falha transitoria; nova tentativa em 2s: "
+                        (os.clock and os.clock() or 0) + 0.05
+                    print("[SETOR PC] Visual Staff: falha transitoria; nova tentativa: "
                         .. tostring(erro))
                     -- A recuperacao ocorre automaticamente. O detalhe permanece
                     -- apenas no log para nao confundir outros comandos no chat.
@@ -7102,7 +7121,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.63",
+    versao = "2.65",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
