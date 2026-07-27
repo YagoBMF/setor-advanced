@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.91'
+local VERSION = '3.94'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -970,7 +970,7 @@ local function desenharVisualStaff()
                 local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
                 local distancia = math.sqrt(dx * dx + dy * dy + dz * dz)
-                if distancia <= 500 then
+                if distancia <= 800 then
                     local emVeiculo = type(isCharInAnyCar) == 'function' and isCharInAnyCar(ped)
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
                     if emVeiculo then
@@ -1079,22 +1079,28 @@ local function desenharVisualStaff()
                             -- TextDraw, pois não faz parte dos dados padrão do SA-MP.
                             local armaId = type(getCurrentCharWeapon) == 'function'
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            if mostrarStatus then
-                                -- O protocolo mobile nao diferencia 100 de valores
-                                -- superiores. Sinaliza o teto em vez de afirmar um
-                                -- valor possivelmente incorreto.
-                                local vidaTexto = vida >= 100 and '+100%'
-                                    or (tostring(math.min(250, vida)) .. '%')
-                                local coleteTexto = colete >= 100 and '+100%'
-                                    or (tostring(math.min(250, colete)) .. '%')
-                                local larguraVida = renderGetFontDrawTextLength(visualStaffFonte, vidaTexto)
-                                local larguraColete = renderGetFontDrawTextLength(visualStaffFonte, coleteTexto)
-                                local larguraTotal = larguraVida + 8 + larguraColete
-                                local inicio = sx - larguraTotal / 2
-                                renderFontDrawText(visualStaffFonte, vidaTexto,
-                                    inicio, statusY, 0xFFE74C3C)
-                                renderFontDrawText(visualStaffFonte, coleteTexto,
-                                    inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
+                            if mostrarStatus and type(renderDrawBox) == 'function' then
+                                -- Vida vermelha a esquerda e colete branco a direita.
+                                -- Acima de 100, a respectiva barra permanece cheia.
+                                local larguraBarra, alturaBarra, espaco = 38, 7, 5
+                                local total = larguraBarra * 2 + espaco
+                                local inicioX = sx - total / 2
+                                local barraY = statusY + 4
+                                local vidaProporcao = math.min(1, vida / 100)
+                                local coleteProporcao = math.min(1, colete / 100)
+                                renderDrawBox(inicioX, barraY, larguraBarra, alturaBarra, 0xB0000000)
+                                if vidaProporcao > 0 then
+                                    renderDrawBox(inicioX + 1, barraY + 1,
+                                        (larguraBarra - 2) * vidaProporcao,
+                                        alturaBarra - 2, 0xFFE74C3C)
+                                end
+                                local coleteX = inicioX + larguraBarra + espaco
+                                renderDrawBox(coleteX, barraY, larguraBarra, alturaBarra, 0xB0000000)
+                                if coleteProporcao > 0 then
+                                    renderDrawBox(coleteX + 1, barraY + 1,
+                                        (larguraBarra - 2) * coleteProporcao,
+                                        alturaBarra - 2, 0xFFFFFFFF)
+                                end
                             end
                             if mostrarArma then
                                 local armaTexto = (visualTextdrawAtual.id == item.id
@@ -1133,13 +1139,13 @@ local function instalarPainelTvMimgui()
             mimgui.SetNextWindowPos(mimgui.ImVec2(x, y),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
-        -- Margem adicional evita recortes de fontes/densidades diferentes,
-        -- mantendo dimensoes explicitas para a troca 80/100/120 funcionar.
+        -- A largura continua controlada, mas a altura fica automatica: o
+        -- conteudo da janela define o tamanho vertical (fit-children).
         if type(mimgui.SetNextWindowSize) == 'function' then
-            mimgui.SetNextWindowSize(mimgui.ImVec2(largura + 12, altura + 10),
+            mimgui.SetNextWindowSize(mimgui.ImVec2(largura + 12, 0),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
-        return escala, x, y, largura + 12, altura + 10
+        return escala, x, y, largura + 12, 0
     end
 
     local function escalarFonteJanela(escala)
@@ -1188,14 +1194,21 @@ local function instalarPainelTvMimgui()
     local function aplicarTamanhoCompensado(largura, altura, escala)
         local fator = fatorDensidadeFonte(escala)
         local w = math.floor(largura * fator + 0.5)
-        local h = math.floor(altura * fator + 0.5)
-        -- Alguns MonetLoader ignoram SetWindowSize depois de Begin().
-        -- Define o tamanho final antes da janela nascer neste frame.
+        -- Nunca deixa a janela ultrapassar a largura logica disponivel. A
+        -- altura zero instrui o ImGui a acompanhar o proprio conteudo.
+        if type(mimgui.GetIO) == 'function' then
+            local okIo, io = pcall(mimgui.GetIO)
+            local telaW = okIo and io and io.DisplaySize
+                and tonumber(io.DisplaySize.x) or nil
+            if telaW and telaW > 80 then
+                w = math.min(w, math.max(80, telaW - 24))
+            end
+        end
         if type(mimgui.SetNextWindowSize) == 'function' then
-            pcall(mimgui.SetNextWindowSize, mimgui.ImVec2(w, h),
+            pcall(mimgui.SetNextWindowSize, mimgui.ImVec2(w, 0),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
-        return w, h
+        return w, 0
     end
 
     local function textoResponsivo(texto)
@@ -1216,6 +1229,33 @@ local function instalarPainelTvMimgui()
         return fallback
     end
 
+    -- Mesmo padrao de margens e espacamentos para todos os paineis
+    -- flutuantes. Se uma build antiga nao expuser StyleVar, usa o estilo
+    -- padrao dela sem interromper o painel.
+    local function aplicarLayoutPadrao(escala)
+        if type(mimgui.PushStyleVar) ~= 'function'
+            or not mimgui.ImVec2 or not mimgui.StyleVar then return 0 end
+        local quantidade = 0
+        local function empilhar(id, valor)
+            if id ~= nil and pcall(mimgui.PushStyleVar, id, valor) then
+                quantidade = quantidade + 1
+            end
+        end
+        empilhar(mimgui.StyleVar.WindowPadding,
+            mimgui.ImVec2(10 * escala, 9 * escala))
+        empilhar(mimgui.StyleVar.ItemSpacing,
+            mimgui.ImVec2(6 * escala, 6 * escala))
+        empilhar(mimgui.StyleVar.FramePadding,
+            mimgui.ImVec2(7 * escala, 5 * escala))
+        return quantidade
+    end
+
+    local function removerLayoutPadrao(quantidade)
+        if quantidade > 0 and type(mimgui.PopStyleVar) == 'function' then
+            pcall(mimgui.PopStyleVar, quantidade)
+        end
+    end
+
     local escalasPaineis = {
         painel_tv_escala = 1.0,
         atendimento_escala = 1.0,
@@ -1234,6 +1274,7 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
+                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
                 local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(345, 225,
                     tonumber(cfg.interface.painel_tv_x) or 18,
@@ -1245,6 +1286,7 @@ local function instalarPainelTvMimgui()
                 end
 
                 janelaW, janelaH = aplicarTamanhoCompensado(janelaW, janelaH, escala)
+                local estilos = aplicarLayoutPadrao(escala)
                 mimgui.Begin('SETOR TV##setor_mobile_tv_' .. tostring(math.floor(escala * 100)), nil, flags)
                 escalarFonteJanela(escala)
                 local idAtual, levelAtual = dadosJogadorAtual()
@@ -1257,7 +1299,7 @@ local function instalarPainelTvMimgui()
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
 
                 local disponivel = larguraInterna(330 * escala)
-                local gap = 4 * escala
+                local gap = 6 * escala
                 if disponivel >= 300 * escala then
                     local bw = (disponivel - gap * 3) / 4
                     if mimgui.Button('MENU', mimgui.ImVec2(bw, 34 * escala)) then painelTvAcaoPendente = 'menu' end
@@ -1295,6 +1337,7 @@ local function instalarPainelTvMimgui()
                     end
                 end
                 mimgui.End()
+                removerLayoutPadrao(estilos)
             end
         )
 
@@ -1308,6 +1351,7 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
+                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
                 local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(285, 118,
                     tonumber(cfg.interface.atendimento_x) or 18,
@@ -1319,13 +1363,14 @@ local function instalarPainelTvMimgui()
                 end
 
                 janelaW, janelaH = aplicarTamanhoCompensado(janelaW, janelaH, escala)
+                local estilos = aplicarLayoutPadrao(escala)
                 mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento_'
                     .. tostring(math.floor(escala * 100)), nil, flags)
                 escalarFonteJanela(escala)
                 local nivel = nivelCargo(cfg.dados.cargo)
                 local disponivel = larguraInterna(255 * escala)
                 if nivel >= 2 then
-                    local gap, bw = 4 * escala, (disponivel - 4 * escala) / 2
+                    local gap, bw = 6 * escala, (disponivel - 6 * escala) / 2
                     if bw >= 88 * escala then
                         if mimgui.Button('/REPORTS', mimgui.ImVec2(bw, 38 * escala)) then
                             prepararAberturaReports(); sampSendChat('/reports')
@@ -1358,6 +1403,7 @@ local function instalarPainelTvMimgui()
                     end
                 end
                 mimgui.End()
+                removerLayoutPadrao(estilos)
             end
         )
 
@@ -1376,6 +1422,7 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
+                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
                 local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(315, 150,
                     tonumber(cfg.interface.suporte_x) or 18,
@@ -1387,6 +1434,7 @@ local function instalarPainelTvMimgui()
                 end
 
                 janelaW, janelaH = aplicarTamanhoCompensado(janelaW, janelaH, escala)
+                local estilos = aplicarLayoutPadrao(escala)
                 mimgui.Begin('SUPORTE ATIVO##setor_mobile_suporte_'
                     .. tostring(math.floor(escala * 100)), nil, flags)
                 escalarFonteJanela(escala)
@@ -1419,6 +1467,7 @@ local function instalarPainelTvMimgui()
                     end
                 end
                 mimgui.End()
+                removerLayoutPadrao(estilos)
             end
         )
 
