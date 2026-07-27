@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.96'
+local VERSION = '3.98'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -195,6 +195,7 @@ local D_CONFIRMAR_TABELA = 28019
 local D_SELETOR_TV = 28020
 local D_MOD_CATEGORIA = 28021
 local D_SELETOR_COMANDO = 28023
+local D_COMANDOS = 28025
 local D_AUTO_LISTA = 28100
 local D_AUTO_CRIAR_COMANDO = 28101
 local D_AUTO_CRIAR_TEMPO = 28102
@@ -299,7 +300,7 @@ local function carregarAutomacoesPersonalizadas()
     local total = math.max(0, math.floor(tonumber(cfg.automacoes.total) or 0))
     for i = 1, total do
         local comando = trim(cfg.automacoes['comando_' .. i])
-        local intervalo = math.max(5, math.floor(tonumber(cfg.automacoes['intervalo_' .. i]) or 60))
+        local intervalo = math.max(10, math.floor(tonumber(cfg.automacoes['intervalo_' .. i]) or 60))
         if comando ~= '' and comando:sub(1, 1) == '/' then
             automacoesPersonalizadas[#automacoesPersonalizadas + 1] = {
                 comando = comando,
@@ -319,6 +320,7 @@ local function salvarAutomacoesPersonalizadas()
         cfg.automacoes['ativo_' .. i] = item.ativo ~= false
     end
     automacoesProximas = {}
+    _G.HZMobileAutoProximoEnvioPermitido = 0
     inicfg.save(cfg, CONFIG_FILE)
 end
 
@@ -383,7 +385,7 @@ local function respostaSetorAuto(dialogId, button, listboxId, input)
                 lua_thread.create(function()
                     wait(100)
                     mostrarDialogoAuto(D_AUTO_CRIAR_TEMPO, 'SETOR AUTO - INTERVALO',
-                        'Digite o intervalo em segundos.\nMinimo: 5 segundos.',
+                        'Digite o intervalo em segundos.\nMinimo: 10 segundos.',
                         'CRIAR', 'CANCELAR', 1)
                 end)
             end
@@ -391,8 +393,8 @@ local function respostaSetorAuto(dialogId, button, listboxId, input)
     elseif dialogId == D_AUTO_CRIAR_TEMPO then
         if confirmou and autoNovoComando then
             local segundos = math.floor(tonumber(tostring(input or ''):match('%d+')) or 0)
-            if segundos < 5 then
-                chat('{FF5555}', 'Use um intervalo de pelo menos 5 segundos.')
+            if segundos < 10 then
+                chat('{FF5555}', 'Use um intervalo de pelo menos 10 segundos.')
             else
                 automacoesPersonalizadas[#automacoesPersonalizadas + 1] = {
                     comando = autoNovoComando, intervalo = segundos, ativo = true
@@ -448,7 +450,7 @@ local function respostaSetorAuto(dialogId, button, listboxId, input)
     elseif dialogId == D_AUTO_EDITAR_TEMPO then
         local item = automacoesPersonalizadas[tonumber(autoSelecionada) or 0]
         local segundos = math.floor(tonumber(tostring(input or ''):match('%d+')) or 0)
-        if confirmou and item and segundos >= 5 then
+        if confirmou and item and segundos >= 10 then
             item.intervalo = segundos
             salvarAutomacoesPersonalizadas()
             chat('{3EDC81}', 'Intervalo atualizado.')
@@ -1558,13 +1560,50 @@ local function instalarPainelTvMimgui()
 end
 
 local function mostrarAjuda()
-    chat('{48C6FF}', 'Mobile ' .. VERSION .. ' | Perfil: /configadm Nome 1-5')
-    chat('{48C6FF}', '/rgnome nome | /rgatual | /rgcache | /rgdel RG')
-    chat('{48C6FF}', '/monitor RG motivo | /desmonitor RG | /ss (painel de monitorados)')
-    chat('{48C6FF}', '/tvn /tvnvoltar (novatos) | /tva /tavoltar (todos) | /tvoff')
-    chat('{48C6FF}', '/setorir RG | /setortrazer RG | /setorvida RG valor | /setorcolete RG valor')
-    chat('{48C6FF}', '/setorreviver RG | /setorcongelar RG | /setordescongelar RG | /setorarmas RG')
-    chat('{48C6FF}', '/mods | /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff|automacoes_staff on|off')
+    local nivel = nivelCargo(cfg.dados.cargo)
+    local linhas = {
+        '{48C6FF}PAINEL E MODULOS',
+        '{FFFFFF}/setor {A8B5C8}- Abre o menu principal.',
+        '{FFFFFF}/mods {A8B5C8}- Abre a central de modulos.',
+        '{FFFFFF}/setorauto {A8B5C8}- Gerencia comandos automaticos.',
+        '{FFFFFF}/setorcomandos {A8B5C8}- Abre este guia.',
+        '',
+        '{48C6FF}JOGADOR E RG',
+        '{FFFFFF}/rgatual {A8B5C8}- Mostra o jogador telado e o RG.',
+        '{FFFFFF}/rgnome Nome {A8B5C8}- Procura um RG pelo nome.'
+    }
+
+    if nivel >= 2 then
+        linhas[#linhas + 1] = ''
+        linhas[#linhas + 1] = '{48C6FF}PAINEL E NAVEGACAO TV'
+        linhas[#linhas + 1] = '{FFFFFF}/tvpainel {A8B5C8}- Abre manualmente o Painel TV.'
+        linhas[#linhas + 1] = '{FFFFFF}/tvn e /tvnvoltar {A8B5C8}- Navega entre novatos.'
+        linhas[#linhas + 1] = '{FFFFFF}/tva e /tavoltar {A8B5C8}- Navega entre jogadores.'
+    end
+
+    if nivel >= 3 then
+        linhas[#linhas + 1] = ''
+        linhas[#linhas + 1] = '{48C6FF}MONITORAMENTO'
+        linhas[#linhas + 1] = '{FFFFFF}/monitor RG motivo {A8B5C8}- Adiciona um monitorado.'
+        linhas[#linhas + 1] = '{FFFFFF}/desmonitor RG {A8B5C8}- Remove um monitorado.'
+        linhas[#linhas + 1] = '{FFFFFF}/ss {A8B5C8}- Abre a lista de monitorados.'
+        linhas[#linhas + 1] = ''
+        linhas[#linhas + 1] = '{48C6FF}ACOES ADMINISTRATIVAS'
+        linhas[#linhas + 1] = '{FFFFFF}/setorir Nome {A8B5C8}- Vai ate o jogador.'
+        linhas[#linhas + 1] = '{FFFFFF}/setortrazer Nome {A8B5C8}- Traz o jogador.'
+        linhas[#linhas + 1] = '{FFFFFF}/setorreviver Nome {A8B5C8}- Revive o jogador.'
+    end
+
+    linhas[#linhas + 1] = ''
+    linhas[#linhas + 1] = '{48C6FF}ATUALIZACAO'
+    linhas[#linhas + 1] = '{FFFFFF}/setorversao {A8B5C8}- Mostra a versao instalada.'
+    linhas[#linhas + 1] = '{FFFFFF}/setoratualizar {A8B5C8}- Procura uma atualizacao.'
+
+    sampShowDialog(D_COMANDOS, 'SETOR ADVANCED - GUIA DE COMANDOS',
+        table.concat(linhas, '\n'), 'FECHAR', '', 2)
+    if type(sampSetDialogClientside) == 'function' then
+        sampSetDialogClientside(false)
+    end
 end
 
 local function dialogo(id, titulo, texto, botao1, botao2, estilo)
@@ -2273,6 +2312,10 @@ local function registrarComandos()
         end
         abrirModulos()
     end)
+    sampRegisterChatCommand('setorcomandos', function()
+        if not exigirStaff('/setorcomandos') then return end
+        mostrarAjuda()
+    end)
     sampRegisterChatCommand('setorauto', function()
         if not exigirStaff('/setorauto') then return end
         abrirSetorAuto()
@@ -2508,7 +2551,9 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     end
     if _G.HZMobileProcessarRespostaReport(dialogId, button, listboxId, input) then return end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > 28024 then return end
+    -- Usa o ID literal aqui para nao consumir mais um upvalue no callback,
+    -- que ja fica proximo do limite de 60 do LuaJIT/MonetLoader.
+    if dialogId < D_MAIN or dialogId > 28025 then return end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
@@ -2612,7 +2657,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         elseif itemMenu == 'auto_telagem' then abrirTV()
         elseif itemMenu == 'cache' then abrirRG()
         elseif itemMenu == 'modulos' then abrirModulos()
-        elseif itemMenu == 'ajuda' then mostrarAjuda() abrirPrincipal() end
+        elseif itemMenu == 'ajuda' then mostrarAjuda() end
     elseif dialogId == D_TV then
         if listboxId == 0 then navegar(true, -1)
         elseif listboxId == 1 then navegar(true, 1)
@@ -3013,22 +3058,30 @@ function main()
             and relogioAtendimento() >= saciarmeProximo then
             sampSendChat('/god')
             saciarmeProximo = relogioAtendimento() + SACIARME_INTERVALO
+            _G.HZMobileAutoProximoEnvioPermitido = os.time() + 10
         end
         if staffLogada and moduloAtivo('automacoes_staff') then
             local agoraAuto = os.time()
             for indice, item in ipairs(automacoesPersonalizadas) do
                 if item.ativo ~= false and tostring(item.comando or '') ~= '' then
-                    local intervalo = math.max(5, math.floor(tonumber(item.intervalo) or 60))
+                    local intervalo = math.max(10, math.floor(tonumber(item.intervalo) or 60))
                     if not automacoesProximas[indice] then
-                        automacoesProximas[indice] = agoraAuto + intervalo
-                    elseif agoraAuto >= automacoesProximas[indice] then
+                        -- Reinicia cada sessao na ordem em que as automacoes
+                        -- foram criadas, sempre separadas por 10 segundos.
+                        automacoesProximas[indice] =
+                            agoraAuto + intervalo + ((indice - 1) * 10)
+                    elseif agoraAuto >= automacoesProximas[indice]
+                        and agoraAuto >= tonumber(_G.HZMobileAutoProximoEnvioPermitido or 0) then
                         sampSendChat(tostring(item.comando))
                         automacoesProximas[indice] = agoraAuto + intervalo
+                        _G.HZMobileAutoProximoEnvioPermitido = agoraAuto + 10
+                        break
                     end
                 end
             end
         elseif next(automacoesProximas) then
             automacoesProximas = {}
+            _G.HZMobileAutoProximoEnvioPermitido = 0
         end
         local ok, erro = pcall(desenharPainelTvFlutuante)
         if not ok then
