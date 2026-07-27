@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.62")
+script_version("2.63")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -5385,6 +5385,8 @@ local function setor_OnDrawFrame()
             if imgui.WindowFlags.NoResize then seletorFlags = seletorFlags + imgui.WindowFlags.NoResize end
             if imgui.WindowFlags.NoScrollbar then seletorFlags = seletorFlags + imgui.WindowFlags.NoScrollbar end
             if imgui.WindowFlags.NoScrollWithMouse then seletorFlags = seletorFlags + imgui.WindowFlags.NoScrollWithMouse end
+            if imgui.WindowFlags.NoNavInputs then seletorFlags = seletorFlags + imgui.WindowFlags.NoNavInputs end
+            if imgui.WindowFlags.NoNavFocus then seletorFlags = seletorFlags + imgui.WindowFlags.NoNavFocus end
         end
 
         imgui.Begin("SETOR SEGURANCA - PLAYER SELECT", seletorJogadorAberto, seletorFlags)
@@ -5458,7 +5460,14 @@ local function setor_OnDrawFrame()
                 local status = id and "ONLINE" or "CACHE"
                 local label = string.format("%s%s    | %s %s    | LV %s    | %s##sel_%d", prefix, nick, origem, alvoFinal, level, status, i)
 
-                local clicouOpcao = uiPlayerButton(label, selected)
+                -- O retorno do Button tambem pode ser ativado pelo Enter usado
+                -- no chat. Desenha o item, mas aceita apenas clique fisico.
+                uiPlayerButton(label, selected)
+                local clicouOpcao = false
+                if type(imgui.IsItemClicked) == "function" then
+                    local okClique, valorClique = pcall(imgui.IsItemClicked, 0)
+                    clicouOpcao = okClique and valorClique == true
+                end
                 local agoraSelecao = os.clock and os.clock() or 0
                 if clicouOpcao
                     and agoraSelecao >= tonumber(_G.HZSeletorPodeSelecionarApos or 0) then
@@ -7093,7 +7102,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.62",
+    versao = "2.63",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
