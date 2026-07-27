@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.98'
+local VERSION = '3.99'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -300,7 +300,7 @@ local function carregarAutomacoesPersonalizadas()
     local total = math.max(0, math.floor(tonumber(cfg.automacoes.total) or 0))
     for i = 1, total do
         local comando = trim(cfg.automacoes['comando_' .. i])
-        local intervalo = math.max(10, math.floor(tonumber(cfg.automacoes['intervalo_' .. i]) or 60))
+        local intervalo = math.max(120, math.floor(tonumber(cfg.automacoes['intervalo_' .. i]) or 120))
         if comando ~= '' and comando:sub(1, 1) == '/' then
             automacoesPersonalizadas[#automacoesPersonalizadas + 1] = {
                 comando = comando,
@@ -385,7 +385,7 @@ local function respostaSetorAuto(dialogId, button, listboxId, input)
                 lua_thread.create(function()
                     wait(100)
                     mostrarDialogoAuto(D_AUTO_CRIAR_TEMPO, 'SETOR AUTO - INTERVALO',
-                        'Digite o intervalo em segundos.\nMinimo: 10 segundos.',
+                        'Digite o intervalo em segundos.\nMinimo: 120 segundos.',
                         'CRIAR', 'CANCELAR', 1)
                 end)
             end
@@ -393,8 +393,8 @@ local function respostaSetorAuto(dialogId, button, listboxId, input)
     elseif dialogId == D_AUTO_CRIAR_TEMPO then
         if confirmou and autoNovoComando then
             local segundos = math.floor(tonumber(tostring(input or ''):match('%d+')) or 0)
-            if segundos < 10 then
-                chat('{FF5555}', 'Use um intervalo de pelo menos 10 segundos.')
+            if segundos < 120 then
+                chat('{FF5555}', 'Use um intervalo de pelo menos 120 segundos.')
             else
                 automacoesPersonalizadas[#automacoesPersonalizadas + 1] = {
                     comando = autoNovoComando, intervalo = segundos, ativo = true
@@ -450,7 +450,7 @@ local function respostaSetorAuto(dialogId, button, listboxId, input)
     elseif dialogId == D_AUTO_EDITAR_TEMPO then
         local item = automacoesPersonalizadas[tonumber(autoSelecionada) or 0]
         local segundos = math.floor(tonumber(tostring(input or ''):match('%d+')) or 0)
-        if confirmou and item and segundos >= 10 then
+        if confirmou and item and segundos >= 120 then
             item.intervalo = segundos
             salvarAutomacoesPersonalizadas()
             chat('{3EDC81}', 'Intervalo atualizado.')
@@ -3058,23 +3058,23 @@ function main()
             and relogioAtendimento() >= saciarmeProximo then
             sampSendChat('/god')
             saciarmeProximo = relogioAtendimento() + SACIARME_INTERVALO
-            _G.HZMobileAutoProximoEnvioPermitido = os.time() + 10
+            _G.HZMobileAutoProximoEnvioPermitido = os.time() + 120
         end
         if staffLogada and moduloAtivo('automacoes_staff') then
             local agoraAuto = os.time()
             for indice, item in ipairs(automacoesPersonalizadas) do
                 if item.ativo ~= false and tostring(item.comando or '') ~= '' then
-                    local intervalo = math.max(10, math.floor(tonumber(item.intervalo) or 60))
+                    local intervalo = math.max(120, math.floor(tonumber(item.intervalo) or 120))
                     if not automacoesProximas[indice] then
                         -- Reinicia cada sessao na ordem em que as automacoes
-                        -- foram criadas, sempre separadas por 10 segundos.
+                        -- foram criadas, sempre separadas por 120 segundos.
                         automacoesProximas[indice] =
-                            agoraAuto + intervalo + ((indice - 1) * 10)
+                            agoraAuto + intervalo + ((indice - 1) * 120)
                     elseif agoraAuto >= automacoesProximas[indice]
                         and agoraAuto >= tonumber(_G.HZMobileAutoProximoEnvioPermitido or 0) then
                         sampSendChat(tostring(item.comando))
                         automacoesProximas[indice] = agoraAuto + intervalo
-                        _G.HZMobileAutoProximoEnvioPermitido = agoraAuto + 10
+                        _G.HZMobileAutoProximoEnvioPermitido = agoraAuto + 120
                         break
                     end
                 end
