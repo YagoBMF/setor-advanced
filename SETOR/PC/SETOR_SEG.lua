@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.56")
+script_version("2.57")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -2763,70 +2763,40 @@ local function resolverPrimeiroArgumentoComoRG(cmd)
 
     local usaOnline = comandoUsaAlvoOnline(comando)
 
-    -- Na telagem, consulta primeiro o cache, mas so usa o RG se o mesmo nick
-    -- ainda estiver online na TAB. Cache historico/offline nunca encerra a busca.
+    -- Na telagem por nome, a TAB online decide primeiro quantos jogadores
+    -- correspondem a busca. O cache serve apenas para obter o RG depois que
+    -- o jogador correto ja foi definido.
     if comando == "tv" then
-        local rgCacheTv, statusCacheTv = buscarRGPorNomeOuRG(alvo, true)
+        local escolhidoTv, encontradosOnlineTv = escolherMelhorJogadorOnline(alvo)
 
-        if rgCacheTv then
-            local infoCacheTv = rgDatabase[tostring(rgCacheTv)]
-            local nickCacheTv = type(infoCacheTv) == "table"
-                and tostring(infoCacheTv.nick or "") or ""
-            local onlineCacheTv = nickCacheTv ~= ""
-                and buscarJogadoresOnlinePorNomeOuID(nickCacheTv) or {}
-            local cacheConfirmadoOnline = false
-
-            for _, jogadorCacheTv in ipairs(onlineCacheTv) do
-                if compactarBuscaNome(jogadorCacheTv.nick or "")
-                    == compactarBuscaNome(nickCacheTv) then
-                    cacheConfirmadoOnline = true
-                    break
-                end
-            end
-
-            if cacheConfirmadoOnline then
-                lastTvRequestedRG = rgCacheTv
-                rgTeladoAtual = rgCacheTv
-                nickPendenteCache = nickCacheTv
-                nickTeladoAtual = nickCacheTv
-                return montarNovoComando(rgCacheTv)
-            end
+        if not escolhidoTv and #encontradosOnlineTv > 1 then
+            seletorJogadorOpcoes = encontradosOnlineTv
+            abrirSeletorJogador(alvo, cmd)
+            return false
         end
 
-        if statusCacheTv == "multiple" then
-            local opcoesCacheTv = seletorJogadorOpcoes
-            local opcoesOnlineTv = {}
-
-            for _, opcaoCacheTv in ipairs(opcoesCacheTv) do
-                local encontradosCacheTv = buscarJogadoresOnlinePorNomeOuID(opcaoCacheTv.nick)
-                for _, jogadorCacheTv in ipairs(encontradosCacheTv) do
-                    if compactarBuscaNome(jogadorCacheTv.nick or "")
-                        == compactarBuscaNome(opcaoCacheTv.nick or "") then
-                        opcoesOnlineTv[#opcoesOnlineTv + 1] = {
-                            id = jogadorCacheTv.id,
-                            nick = jogadorCacheTv.nick,
-                            rg = opcaoCacheTv.rg,
-                            score = jogadorCacheTv.score,
-                            origem = "cache_tab"
-                        }
-                        break
-                    end
-                end
-            end
-
-            if #opcoesOnlineTv == 1 then
-                local unicaCacheTv = opcoesOnlineTv[1]
-                lastTvRequestedRG = tostring(unicaCacheTv.rg)
-                rgTeladoAtual = tostring(unicaCacheTv.rg)
-                nickPendenteCache = unicaCacheTv.nick
-                nickTeladoAtual = unicaCacheTv.nick
-                return montarNovoComando(unicaCacheTv.rg)
-            elseif #opcoesOnlineTv > 1 then
-                seletorJogadorOpcoes = opcoesOnlineTv
-                abrirSeletorJogador(alvo, cmd)
-                return false
-            end
+        if not escolhidoTv then
+            sampAddChatMessage(
+                "{FF0000}ERRO: Jogador nao encontrado entre os jogadores online.",
+                -1
+            )
+            return false
         end
+
+        local rgSeguroTv = resolverRGDaOpcaoJogador(escolhidoTv)
+        local nickSeguroTv = tostring(escolhidoTv.nick or alvo)
+
+        if rgSeguroTv and rgSeguroTv ~= "" then
+            lastTvRequestedRG = tostring(rgSeguroTv)
+            rgTeladoAtual = tostring(rgSeguroTv)
+            nickPendenteCache = nickSeguroTv
+            nickTeladoAtual = nickSeguroTv
+            return montarNovoComando(rgSeguroTv)
+        end
+
+        -- Sem RG confiavel, usa o clique real da TAB para nao enviar ID como RG.
+        telarJogadorOnlinePelaTAB(escolhidoTv.id, nickSeguroTv)
+        return false
     end
 
     -- Comandos de alvo online podem abrir seletor por nome abreviado,
@@ -7062,7 +7032,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.56",
+    versao = "2.57",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
