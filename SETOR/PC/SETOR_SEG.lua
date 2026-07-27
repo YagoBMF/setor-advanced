@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.65")
+script_version("2.70")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -3974,8 +3974,6 @@ _G.HZModelosMotoVisualPc = _G.HZModelosMotoVisualPc or {
 
 function _G.HZDesenharVisualStaffPc()
     if not _G.HZModuloAtivo("visual_staff") then return end
-    local relogioVisual = os.clock and os.clock() or 0
-    if relogioVisual < tonumber(_G.HZVisualStaffBloqueadoAtePc or 0) then return end
     if type(renderFontDrawText) ~= "function"
         or type(convert3DCoordsToScreen) ~= "function"
         or type(sampGetCharHandleBySampPlayerId) ~= "function" then
@@ -4008,74 +4006,21 @@ function _G.HZDesenharVisualStaffPc()
     local nivel = _G.HZNivelCargo(cargoAdmin)
     for _, item in ipairs(_G.HZVisualStaffJogadoresPc) do
         if sampIsPlayerConnected(item.id) then
+            -- O handle e consultado novamente em cada quadro. O SA-MP pode
+            -- substituir o personagem remoto ao entrar/sair de um veiculo.
             local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
-            local naTela = true
-            if existe and ped and type(isCharOnScreen) == "function" then
-                local okTela, valorTela = pcall(isCharOnScreen, ped)
-                naTela = okTela and valorTela == true
-            end
-            if existe and ped and naTela then
-                local okPosicao, x, y, z = pcall(getCharCoordinates, ped)
-                if okPosicao and x and y and z then
+            if existe and ped and ped ~= PLAYER_PED
+                and (type(isCharOnScreen) ~= "function" or isCharOnScreen(ped)) then
+                local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 1000 then
-                    local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
-                    local pontoX, pontoY, pontoZ = x, y, z + 1.10
-                    if emVeiculo then
-                        local carro, assento = nil, nil
-                        if type(storeCarCharIsInNoSave) == "function" then
-                            local okCarro, valorCarro = pcall(storeCarCharIsInNoSave, ped)
-                            if okCarro then carro = valorCarro end
-                        end
-                        if carro and type(getDriverOfCar) == "function" then
-                            local okMotorista, motorista = pcall(getDriverOfCar, carro)
-                            if okMotorista and motorista == ped then assento = -1 end
-                        end
-                        if carro and assento == nil
-                            and type(getCharInCarPassengerSeat) == "function" then
-                            for lugar = 0, 7 do
-                                local okLugar, ocupante = pcall(
-                                    getCharInCarPassengerSeat, carro, lugar)
-                                if okLugar and ocupante == ped then
-                                    assento = lugar
-                                    break
-                                end
-                            end
-                        end
-                        if carro and assento ~= nil
-                            and type(getOffsetFromCarInWorldCoords) == "function" then
-                            local modelo = 0
-                            if type(getCarModel) == "function" then
-                                local okModelo, valorModelo = pcall(getCarModel, carro)
-                                if okModelo then modelo = tonumber(valorModelo) or 0 end
-                            end
-                            local ox, oy, oz
-                            if _G.HZModelosMotoVisualPc[modelo] then
-                                -- Moto: ocupantes ficam no mesmo eixo, separados
-                                -- apenas para frente/tras conforme o assento.
-                                ox = 0
-                                oy = assento == -1 and 0.22 or -0.48
-                                oz = 1.28
-                            else
-                                -- Carro: separacao curta e proporcional aos bancos.
-                                local lado = assento == -1 and -0.38
-                                    or ((assento % 2 == 0) and 0.38 or -0.38)
-                                local fila = assento <= 0 and 0.22
-                                    or (-0.48 - math.floor((assento - 1) / 2) * 0.52)
-                                ox, oy, oz = lado, fila, 1.28
-                            end
-                            local okPonto, vx, vy, vz = pcall(
-                                getOffsetFromCarInWorldCoords, carro, ox, oy, oz)
-                            if okPonto and vx and vy and vz then
-                                pontoX, pontoY, pontoZ = vx, vy, vz
-                            end
-                        end
-                    end
-                    local okTela2D, sx, sy =
-                        pcall(convert3DCoordsToScreen, pontoX, pontoY, pontoZ)
-                    if okTela2D and sx and sy then
-                        local okNick, valorNick = pcall(sampGetPlayerNickname, item.id)
-                        local nome = tostring(okNick and valorNick or "?")
+                    -- Usa a posicao real do ped, como o wall de referencia.
+                    -- Isso evita juntar todos os ocupantes no centro do veiculo.
+                    local sx, sy = convert3DCoordsToScreen(x, y, z + 1.10)
+                    if sx and sy then
+                        local emVeiculo = type(isCharInAnyCar) == "function"
+                            and isCharInAnyCar(ped)
+                        local nome = tostring(sampGetPlayerNickname(item.id) or "?")
                         if type(sampIsPlayerPaused) == "function" then
                             local okPausa, pausado = pcall(sampIsPlayerPaused, item.id)
                             if okPausa and pausado then nome = "|| " .. nome end
@@ -4088,7 +4033,7 @@ function _G.HZDesenharVisualStaffPc()
                             and configSistema.modulos.visual_status ~= false
                         local mostrarArma = nivel >= 2 and not emVeiculo
                             and configSistema.modulos.visual_arma ~= false
-                        local limiteInferior = emVeiculo and (sy - 57) or (sy - 73)
+                        local limiteInferior = sy - 73
                         local nomeY = limiteInferior
                             - (mostrarStatus and 14 or 0)
                             - (mostrarArma and 14 or 0)
@@ -4121,33 +4066,24 @@ function _G.HZDesenharVisualStaffPc()
                             -- real (por exemplo, mostrar 100 quando o jogador tem 75).
                             -- Capacete continua vindo do TextDraw porque não existe
                             -- esse campo na estrutura padrão do SA-MP.
-                            local armaId = 0
-                            if type(getCurrentCharWeapon) == "function" then
-                                local okArma, valorArma = pcall(getCurrentCharWeapon, ped)
-                                if okArma then armaId = tonumber(valorArma) or 0 end
-                            end
-                            if mostrarStatus and type(renderDrawBox) == "function" then
-                                -- Duas barras discretas: vida a esquerda e colete
-                                -- a direita. Valores acima de 100 mantem a barra cheia.
-                                local larguraBarra, alturaBarra, espaco = 36, 6, 5
-                                local total = larguraBarra * 2 + espaco
-                                local inicioX = sx - total / 2
-                                local barraY = statusY + 4
-                                local vidaProporcao = math.min(1, vida / 100)
-                                local coleteProporcao = math.min(1, colete / 100)
-                                renderDrawBox(inicioX, barraY, larguraBarra, alturaBarra, 0xB0000000)
-                                if vidaProporcao > 0 then
-                                    renderDrawBox(inicioX + 1, barraY + 1,
-                                        (larguraBarra - 2) * vidaProporcao,
-                                        alturaBarra - 2, 0xFFE74C3C)
-                                end
-                                local coleteX = inicioX + larguraBarra + espaco
-                                renderDrawBox(coleteX, barraY, larguraBarra, alturaBarra, 0xB0000000)
-                                if coleteProporcao > 0 then
-                                    renderDrawBox(coleteX + 1, barraY + 1,
-                                        (larguraBarra - 2) * coleteProporcao,
-                                        alturaBarra - 2, 0xFFFFFFFF)
-                                end
+                            local ehTelado = tonumber(item.id) == tonumber(idTelado)
+                            local armaId = type(getCurrentCharWeapon) == "function"
+                                and tonumber(getCurrentCharWeapon(ped)) or 0
+                            if mostrarStatus then
+                                local vidaTexto = (not ehTelado and vida >= 100)
+                                    and "+100%"
+                                    or (tostring(math.min(250, vida)) .. "%")
+                                local coleteTexto = tostring(math.min(250, colete)) .. "%"
+                                local larguraVida =
+                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, vidaTexto)
+                                local larguraColete =
+                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
+                                local larguraTotal = larguraVida + 8 + larguraColete
+                                local inicio = sx - larguraTotal / 2
+                                renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
+                                    inicio, statusY, 0xFFE74C3C)
+                                renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
+                                    inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
                             end
                             if mostrarArma then
                                 local armaTexto = (tonumber(statsTd.id) == tonumber(item.id)
@@ -4162,7 +4098,6 @@ function _G.HZDesenharVisualStaffPc()
                             end
                         end
                     end
-                end
                 end
             end
         end
@@ -5843,24 +5778,15 @@ local function setor_main()
             while true do
                 wait(0)
                 local ok, erro = pcall(_G.HZDesenharVisualStaffPc)
-                if ok then
-                    _G.HZVisualStaffErrosPc = 0
-                else
-                    -- Um jogador pode desaparecer ou trocar de veiculo exatamente
-                    -- durante o desenho. Isso e transitorio e nao significa que a
-                    -- DATA seja incompativel; apenas pausa e tenta novamente.
-                    _G.HZVisualStaffErrosPc = tonumber(_G.HZVisualStaffErrosPc or 0) + 1
-                    -- Refaz a lista rapidamente; uma troca de jogador/veiculo
-                    -- nao deve apagar o wall inteiro por varios segundos.
-                    _G.HZVisualStaffJogadoresPc = {}
-                    _G.HZVisualStaffProximaVarreduraPc = 0
-                    _G.HZVisualStaffBloqueadoAtePc =
-                        (os.clock and os.clock() or 0) + 0.05
-                    print("[SETOR PC] Visual Staff: falha transitoria; nova tentativa: "
-                        .. tostring(erro))
-                    -- A recuperacao ocorre automaticamente. O detalhe permanece
-                    -- apenas no log para nao confundir outros comandos no chat.
-                    _G.HZVisualStaffErroAvisadoPc = true
+                if not ok then
+                    -- Uma referencia remota pode desaparecer durante o mesmo
+                    -- quadro. Isso e temporario e nao deve desligar o modulo.
+                    local agoraErro = os.clock and os.clock() or 0
+                    if agoraErro >= (_G.HZVisualStaffBloqueadoAtePc or 0) then
+                        _G.HZVisualStaffBloqueadoAtePc = agoraErro + 5
+                        print("[SETOR PC] Visual Staff ignorou uma falha temporaria: "
+                            .. tostring(erro))
+                    end
                 end
             end
         end)
@@ -7121,7 +7047,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.65",
+    versao = "2.70",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
