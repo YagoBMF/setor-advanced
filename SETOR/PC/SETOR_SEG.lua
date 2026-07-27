@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.61")
+script_version("2.62")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -3685,6 +3685,9 @@ function _G.HZPrepararTeclasSeletor()
     -- So aceita um novo Enter depois que o Enter usado para enviar o
     -- comando no chat for completamente solto.
     _G.HZSeletorEnterLiberado = false
+    -- O ImGui tambem pode interpretar a liberacao desse Enter como ativacao
+    -- do primeiro botao. Durante esta janela curta nenhuma opcao executa.
+    _G.HZSeletorPodeSelecionarApos = (os.clock and os.clock() or 0) + 0.60
 end
 
 local function fecharSeletorJogador()
@@ -3740,7 +3743,9 @@ local function setor_onWindowMessage(msg, wparam, lparam)
                 if wparam == VK_UP then seletorPressUp = true end
                 if wparam == VK_DOWN then seletorPressDown = true end
                 if wparam == VK_RETURN_SELETOR then
-                    if _G.HZSeletorEnterLiberado == true then
+                    local agoraEnter = os.clock and os.clock() or 0
+                    if _G.HZSeletorEnterLiberado == true
+                        and agoraEnter >= tonumber(_G.HZSeletorPodeSelecionarApos or 0) then
                         seletorPressEnter = true
                     end
                 end
@@ -5453,7 +5458,10 @@ local function setor_OnDrawFrame()
                 local status = id and "ONLINE" or "CACHE"
                 local label = string.format("%s%s    | %s %s    | LV %s    | %s##sel_%d", prefix, nick, origem, alvoFinal, level, status, i)
 
-                if uiPlayerButton(label, selected) then
+                local clicouOpcao = uiPlayerButton(label, selected)
+                local agoraSelecao = os.clock and os.clock() or 0
+                if clicouOpcao
+                    and agoraSelecao >= tonumber(_G.HZSeletorPodeSelecionarApos or 0) then
                     seletorJogadorIndice = i
                     executarOpcaoSeletor(p)
                     imgui.EndChild()
@@ -7085,7 +7093,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.61",
+    versao = "2.62",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
