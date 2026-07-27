@@ -1474,7 +1474,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.48")
+script_version("2.52")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -3019,7 +3019,7 @@ local lastSceneX, lastSceneY, lastSceneZ = 0, 0, 0
 local loadingScene = false
 local lastPlayerX, lastPlayerY, lastPlayerZ = 0, 0, 0
 
--- ================== SISTEMA AUTOMÁTICO /SACIARME NA STAFF ==================
+-- ================== SISTEMA AUTOMÁTICO /GOD NA STAFF ==================
 local staffWorkActive = false
 local saciarmeInterval = 15 * 60
 local saciarmeNextTime = 0
@@ -3160,7 +3160,7 @@ function _G.HZAtualizarAutomacoesStaff()
     -- do evento inicial de login ou se alguma recarga interrompeu o contador.
     if configSistema.automacaoSaciarme ~= false
         and staffWorkActive and os.time() >= saciarmeNextTime then
-        sampSendChat("/saciarme")
+        sampSendChat("/god")
         saciarmeNextTime = os.time() + saciarmeInterval
     end
 
@@ -3939,6 +3939,8 @@ _G.HZVisualStaffFontePc = _G.HZVisualStaffFontePc or nil
 _G.HZVisualStaffJogadoresPc = _G.HZVisualStaffJogadoresPc or {}
 _G.HZVisualStaffProximaVarreduraPc = _G.HZVisualStaffProximaVarreduraPc or 0
 _G.HZVisualStaffErroAvisadoPc = _G.HZVisualStaffErroAvisadoPc or false
+_G.HZVisualStaffBloqueadoAtePc = _G.HZVisualStaffBloqueadoAtePc or 0
+_G.HZVisualStaffErrosPc = _G.HZVisualStaffErrosPc or 0
 _G.HZNomesArmasVisualPc = _G.HZNomesArmasVisualPc or {
     [0]="Desarmado", [1]="Soco ingles", [2]="Taco de golfe", [3]="Cassetete",
     [4]="Faca", [5]="Taco", [6]="Pa", [7]="Taco de sinuca", [8]="Katana",
@@ -3959,6 +3961,8 @@ _G.HZModelosMotoVisualPc = _G.HZModelosMotoVisualPc or {
 
 function _G.HZDesenharVisualStaffPc()
     if not _G.HZModuloAtivo("visual_staff") then return end
+    local relogioVisual = os.clock and os.clock() or 0
+    if relogioVisual < tonumber(_G.HZVisualStaffBloqueadoAtePc or 0) then return end
     if type(renderFontDrawText) ~= "function"
         or type(convert3DCoordsToScreen) ~= "function"
         or type(sampGetCharHandleBySampPlayerId) ~= "function" then
@@ -3995,7 +3999,7 @@ function _G.HZDesenharVisualStaffPc()
             if existe and ped and (type(isCharOnScreen) ~= "function" or isCharOnScreen(ped)) then
                 local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
-                if math.sqrt(dx * dx + dy * dy + dz * dz) <= 750 then
+                if math.sqrt(dx * dx + dy * dy + dz * dz) <= 1000 then
                     local emVeiculo = type(isCharInAnyCar) == "function" and isCharInAnyCar(ped)
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
                     if emVeiculo then
@@ -4093,24 +4097,30 @@ function _G.HZDesenharVisualStaffPc()
                             -- real (por exemplo, mostrar 100 quando o jogador tem 75).
                             -- Capacete continua vindo do TextDraw porque não existe
                             -- esse campo na estrutura padrão do SA-MP.
-                            local ehTelado = tonumber(item.id) == tonumber(idTelado)
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            if mostrarStatus then
-                                local vidaTexto = (not ehTelado and vida >= 100)
-                                    and "+100%"
-                                    or (tostring(math.min(250, vida)) .. "%")
-                                local coleteTexto = tostring(math.min(250, colete)) .. "%"
-                                local larguraVida =
-                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, vidaTexto)
-                                local larguraColete =
-                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
-                                local larguraTotal = larguraVida + 8 + larguraColete
-                                local inicio = sx - larguraTotal / 2
-                                renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
-                                    inicio, statusY, 0xFFE74C3C)
-                                renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
-                                    inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
+                            if mostrarStatus and type(renderDrawBox) == "function" then
+                                -- Duas barras discretas: vida a esquerda e colete
+                                -- a direita. Valores acima de 100 mantem a barra cheia.
+                                local larguraBarra, alturaBarra, espaco = 36, 6, 5
+                                local total = larguraBarra * 2 + espaco
+                                local inicioX = sx - total / 2
+                                local barraY = statusY + 4
+                                local vidaProporcao = math.min(1, vida / 100)
+                                local coleteProporcao = math.min(1, colete / 100)
+                                renderDrawBox(inicioX, barraY, larguraBarra, alturaBarra, 0xB0000000)
+                                if vidaProporcao > 0 then
+                                    renderDrawBox(inicioX + 1, barraY + 1,
+                                        (larguraBarra - 2) * vidaProporcao,
+                                        alturaBarra - 2, 0xFFE74C3C)
+                                end
+                                local coleteX = inicioX + larguraBarra + espaco
+                                renderDrawBox(coleteX, barraY, larguraBarra, alturaBarra, 0xB0000000)
+                                if coleteProporcao > 0 then
+                                    renderDrawBox(coleteX + 1, barraY + 1,
+                                        (larguraBarra - 2) * coleteProporcao,
+                                        alturaBarra - 2, 0xFFFFFFFF)
+                                end
                             end
                             if mostrarArma then
                                 local armaTexto = (tonumber(statsTd.id) == tonumber(item.id)
@@ -4294,7 +4304,7 @@ function _G.HZAbrirPainelAutomacoes()
 
     local estadoSaciarme = configSistema.automacaoSaciarme ~= false and "ATIVO" or "DESATIVADO"
     local texto = table.concat({
-        "{48C6FF}/SACIARME AUTOMATICO  " ..
+        "{48C6FF}/GOD AUTOMATICO  " ..
             (estadoSaciarme == "ATIVO" and "{3EDC81}" or "{FFB347}") .. "[" .. estadoSaciarme ..
             "] {A8B5C8}- 30 segundos; depois 15 em 15 minutos."
     }, "\n")
@@ -4317,8 +4327,8 @@ function _G.HZAlternarAutomacao(indice)
             stopStaffSaciarme()
         end
         sampAddChatMessage((configSistema.automacaoSaciarme and
-            "{3EDC81}[AUTOMACOES] /saciarme automatico ativado." or
-            "{FFB347}[AUTOMACOES] /saciarme automatico desativado."), -1)
+            "{3EDC81}[AUTOMACOES] /god automatico ativado." or
+            "{FFB347}[AUTOMACOES] /god automatico desativado."), -1)
     elseif tonumber(indice) == 1 then
         configSistema.automacaoMensagens = configSistema.automacaoMensagens == false
         if configSistema.automacaoMensagens and _G.HZModuloAtivo("automacoes_staff") then
@@ -4523,7 +4533,7 @@ function _G.HZAbrirSetorComandos()
     local texto = table.concat({
         "{48C6FF}PAINEL E MODULOS",
         "{FFFFFF}/mods {A8B5C8}- Abre ou fecha a central de modulos.",
-        "{FFFFFF}/automacoes {A8B5C8}- Controla /saciarme e mensagens automaticas.",
+        "{FFFFFF}/automacoes {A8B5C8}- Controla /god e mensagens automaticas.",
         "{FFFFFF}/setorauto {A8B5C8}- Cria, edita e exclui comandos automaticos.",
         "{FFFFFF}/setorcomandos {A8B5C8}- Abre esta janela de ajuda.",
         "{FFFFFF}/tvz {A8B5C8}- Abre ou fecha manualmente o Painel TV.",
@@ -5750,15 +5760,24 @@ local function setor_main()
             while true do
                 wait(0)
                 local ok, erro = pcall(_G.HZDesenharVisualStaffPc)
-                if not ok and not _G.HZVisualStaffErroAvisadoPc then
-                    _G.HZVisualStaffErroAvisadoPc = true
-                    configSistema.modulos.visual_staff = false
-                    salvarConfigSistema(true)
-                    print("[SETOR PC] Visual Staff desativado por incompatibilidade: " .. tostring(erro))
-                    sampAddChatMessage(
-                        "{FF6B6B}[SETOR] Visual Staff desativado: incompatibilidade detectada neste PC.",
-                        -1
-                    )
+                if ok then
+                    _G.HZVisualStaffErrosPc = 0
+                else
+                    -- Um jogador pode desaparecer ou trocar de veiculo exatamente
+                    -- durante o desenho. Isso e transitorio e nao significa que a
+                    -- DATA seja incompativel; apenas pausa e tenta novamente.
+                    _G.HZVisualStaffErrosPc = tonumber(_G.HZVisualStaffErrosPc or 0) + 1
+                    _G.HZVisualStaffBloqueadoAtePc =
+                        (os.clock and os.clock() or 0) + 2
+                    print("[SETOR PC] Visual Staff: falha transitoria; nova tentativa em 2s: "
+                        .. tostring(erro))
+                    if not _G.HZVisualStaffErroAvisadoPc then
+                        _G.HZVisualStaffErroAvisadoPc = true
+                        sampAddChatMessage(
+                            "{FFB347}[SETOR] Visual Staff encontrou uma falha temporaria e tentara novamente.",
+                            -1
+                        )
+                    end
                 end
             end
         end)
@@ -6992,7 +7011,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.48",
+    versao = "2.52",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
