@@ -1474,7 +1474,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.8")
+script_version("2.48")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -2066,7 +2066,6 @@ local function telarJogadorOnlinePelaTAB(id, nick)
         end
     end)
 
-    sampAddChatMessage(string.format("{FFFF00}[TV] RG nao encontrado no cache. Telando %s pela TAB.", nick), -1)
     return true
 end
 
@@ -2114,10 +2113,7 @@ local function buscarRGPorNomeOuRG(valor, silencioso)
     end
 
     if #encontrados > 1 then
-        if not silencioso then
-            seletorJogadorOpcoes = encontrados
-            sampAddChatMessage("{FFFF00}Mais de um jogador encontrado. Selecione na janela.", -1)
-        end
+        seletorJogadorOpcoes = encontrados
 
         return nil, "multiple"
     end
@@ -2676,8 +2672,12 @@ local comandosComSeletorPorNome = {
     prenderarmas = true,
     checar = true,
     checarjogador = true,
+    checkar = true,
+    info = true,
+    spec = true,
     setvida = true,
-    setcolete = true
+    setcolete = true,
+    stt = true
 }
 
 local function comandoUsaAlvoOnline(nomeCmd)
@@ -2728,6 +2728,16 @@ local function resolverPrimeiroArgumentoComoRG(cmd)
 
     comando = comando:lower()
 
+    -- /tv usa todo o texto depois do comando como nome. Assim nomes compostos
+    -- nao sao confundidos com argumentos adicionais.
+    if comando == "tv" then
+        local nomeCompleto = tostring(cmd or ""):match("^%s*/%S+%s+(.+)%s*$")
+        if nomeCompleto then
+            alvo = nomeCompleto:match("^%s*(.-)%s*$")
+            resto = ""
+        end
+    end
+
     -- Punicoes nao passam pela conversao de nome abreviado.
     -- /ban, /bantemp, /cadeia e /punicao continuam exigindo RG digitado
     -- ou sendo aplicados pelo painel, conforme o fluxo original.
@@ -2748,6 +2758,72 @@ local function resolverPrimeiroArgumentoComoRG(cmd)
     end
 
     local usaOnline = comandoUsaAlvoOnline(comando)
+
+    -- Na telagem, consulta primeiro o cache, mas so usa o RG se o mesmo nick
+    -- ainda estiver online na TAB. Cache historico/offline nunca encerra a busca.
+    if comando == "tv" then
+        local rgCacheTv, statusCacheTv = buscarRGPorNomeOuRG(alvo, true)
+
+        if rgCacheTv then
+            local infoCacheTv = rgDatabase[tostring(rgCacheTv)]
+            local nickCacheTv = type(infoCacheTv) == "table"
+                and tostring(infoCacheTv.nick or "") or ""
+            local onlineCacheTv = nickCacheTv ~= ""
+                and buscarJogadoresOnlinePorNomeOuID(nickCacheTv) or {}
+            local cacheConfirmadoOnline = false
+
+            for _, jogadorCacheTv in ipairs(onlineCacheTv) do
+                if compactarBuscaNome(jogadorCacheTv.nick or "")
+                    == compactarBuscaNome(nickCacheTv) then
+                    cacheConfirmadoOnline = true
+                    break
+                end
+            end
+
+            if cacheConfirmadoOnline then
+                lastTvRequestedRG = rgCacheTv
+                rgTeladoAtual = rgCacheTv
+                nickPendenteCache = nickCacheTv
+                nickTeladoAtual = nickCacheTv
+                return montarNovoComando(rgCacheTv)
+            end
+        end
+
+        if statusCacheTv == "multiple" then
+            local opcoesCacheTv = seletorJogadorOpcoes
+            local opcoesOnlineTv = {}
+
+            for _, opcaoCacheTv in ipairs(opcoesCacheTv) do
+                local encontradosCacheTv = buscarJogadoresOnlinePorNomeOuID(opcaoCacheTv.nick)
+                for _, jogadorCacheTv in ipairs(encontradosCacheTv) do
+                    if compactarBuscaNome(jogadorCacheTv.nick or "")
+                        == compactarBuscaNome(opcaoCacheTv.nick or "") then
+                        opcoesOnlineTv[#opcoesOnlineTv + 1] = {
+                            id = jogadorCacheTv.id,
+                            nick = jogadorCacheTv.nick,
+                            rg = opcaoCacheTv.rg,
+                            score = jogadorCacheTv.score,
+                            origem = "cache_tab"
+                        }
+                        break
+                    end
+                end
+            end
+
+            if #opcoesOnlineTv == 1 then
+                local unicaCacheTv = opcoesOnlineTv[1]
+                lastTvRequestedRG = tostring(unicaCacheTv.rg)
+                rgTeladoAtual = tostring(unicaCacheTv.rg)
+                nickPendenteCache = unicaCacheTv.nick
+                nickTeladoAtual = unicaCacheTv.nick
+                return montarNovoComando(unicaCacheTv.rg)
+            elseif #opcoesOnlineTv > 1 then
+                seletorJogadorOpcoes = opcoesOnlineTv
+                abrirSeletorJogador(alvo, cmd)
+                return false
+            end
+        end
+    end
 
     -- Comandos de alvo online podem abrir seletor por nome abreviado,
     -- mas o comando final SEMPRE deve sair com RG, nunca com ID.
@@ -2784,7 +2860,6 @@ local function resolverPrimeiroArgumentoComoRG(cmd)
                     rgTeladoAtual = rgAtual
                     nickPendenteCache = p.nick or alvo
                     nickTeladoAtual = p.nick or alvo
-                    sampAddChatMessage(string.format("{00FF7F}RG localizado: %s -> RG %s.", tostring(p.nick or alvo), tostring(rgAtual)), -1)
                     return montarNovoComando(rgAtual)
                 end
 
@@ -2808,7 +2883,6 @@ local function resolverPrimeiroArgumentoComoRG(cmd)
 
         if #encontradosOnline > 1 then
             seletorJogadorOpcoes = encontradosOnline
-            sampAddChatMessage("{FFFF00}Mais de um jogador online encontrado. Selecione na janela.", -1)
             abrirSeletorJogador(alvo, cmd)
             return false
         end
@@ -3688,28 +3762,6 @@ local function setor_onWindowMessage(msg, wparam, lparam)
     end
 end
 
-local function comandoUsaAlvoOnline(nomeCmd)
-    nomeCmd = tostring(nomeCmd or ""):lower()
-    return ({
-        tv = true,
-        ir = true,
-        trazer = true,
-        tapa = true,
-        reviver = true,
-        congelar = true,
-        descongelar = true,
-        prenderarmas = true,
-        checar = true,
-        checarjogador = true,
-        checkar = true,
-        info = true,
-        spec = true,
-        setvida = true,
-        setcolete = true,
-        stt = true
-    })[nomeCmd] == true
-end
-
 local function sincronizarRGSelecionadoComTAB(rg, nick, idAtual)
     rg = tostring(rg or ""):gsub("%D", "")
     nick = tostring(nick or "")
@@ -3812,7 +3864,6 @@ local function executarOpcaoSeletor(p)
 
             if novoCmd then
                 sampSendChat(novoCmd)
-                sampAddChatMessage(string.format("{00FF7F}Selecionado: %s - RG %s", nick, rg), -1)
             else
                 sampAddChatMessage("{FF0000}ERRO: Nao foi possivel montar o comando.", -1)
             end
@@ -3821,7 +3872,6 @@ local function executarOpcaoSeletor(p)
             -- Para qualquer outro comando, nunca envia ID.
             if cmdLower == "tv" and id then
                 telarJogadorOnlinePelaTAB(tonumber(id), nick)
-                sampAddChatMessage(string.format("{FFFF00}RG ainda nao encontrado no cache. Telando %s pela TAB para capturar o RG.", nick), -1)
             else
                 sampAddChatMessage("{FF0000}ERRO: Nao encontrei o RG desse jogador. Aguarde o RG aparecer no chat ou use o RG completo no comando.", -1)
             end
@@ -5352,7 +5402,7 @@ local function setor_OnDrawFrame()
                 seletorJogadorIndice = seletorJogadorIndice + 1
                 if seletorJogadorIndice > total then seletorJogadorIndice = 1 end
                 navegouSeta = true
-            elseif seletorPressEnter or wasKeyPressed(VK_RETURN_SELETOR) then
+            elseif seletorPressEnter then
                 seletorPressEnter = false
                 executarOpcaoSeletor(seletorJogadorOpcoes[seletorJogadorIndice])
                 imgui.End()
@@ -5885,15 +5935,25 @@ function enviarTudo(nick, id_ou_rg, tempo, motivo, acao, url, tipoPunicao)
     lua_thread.create(function()
         local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
 
-        local formMsg = string.format("```\\nADM: %s\\nNICK: %s\\nRG: %s\\nTEMPO: %s\\nMOTIVO: %s\\nPROVAS: \\n```",
+        local formMsg = string.format("```\nADM: %s\nNICK: %s\nRG: %s\nTEMPO: %s\nMOTIVO: %s\nPROVAS: \n```",
             staffLog, nick, id_ou_rg, tempo, motivo)
+        local payloadHora = '{"content":"' .. escaparJsonDiscord("[" .. dataHora .. "]") .. '"}'
+        local payloadForm = '{"content":"' .. escaparJsonDiscord(formMsg) .. '"}'
 
-        requests.post(url, {data = '{"content":"['..dataHora..']"}', headers = {["Content-Type"] = "application/json"}})
+        local okHora = pcall(requests.post, url, {
+            data = payloadHora,
+            headers = {["Content-Type"] = "application/json"}
+        })
         wait(700)
-        local ok = requests.post(url, {data = '{"content":"'..formMsg..'"}', headers = {["Content-Type"] = "application/json"}})
+        local okForm, respostaForm = pcall(requests.post, url, {
+            data = payloadForm,
+            headers = {["Content-Type"] = "application/json"}
+        })
 
-        if ok then
+        if okHora and okForm and respostaForm then
             sampAddChatMessage("{00FF00}[SISTEMA]: Registro de " .. tipoPunicao .. " enviado!", -1)
+        else
+            sampAddChatMessage("{FF5555}[SETOR]: Falha ao enviar registro de " .. tipoPunicao .. " ao Discord.", -1)
         end
     end)
 end
@@ -5974,6 +6034,10 @@ local function setor_onSendCommand(cmd)
             )
         end
     end
+
+    -- Fora da staff, o SETOR nao converte, registra ou automatiza comandos.
+    -- /la e os comandos normais do servidor continuam passando sem alteracao.
+    if not _G.HZStaffLogada then return end
 
     if convertendoComandoPainel then
         convertendoComandoPainel = false
@@ -6258,6 +6322,10 @@ local function setor_onSendCommand(cmd)
     elseif cmd:find("^/cadeia%s+(%d+)%s+(%d+)%s+(.+)") or cmd:find("^/punicao%s+(%d+)%s+(%d+)%s+(.+)") then
         local rg, tempo, motivo = cmd:match("/%a+%s+(%d+)%s+(%d+)%s+(.+)")
         v_rg, v_tempo, v_motivo, v_tipo = rg, tempo .. " minutos", motivo, "CADEIA"
+        aguardandoConfirmacao = true
+    elseif cmd:find("^/mute%s+(%d+)%s+(%d+)%s+(.+)") then
+        local rg, tempo, motivo = cmd:match("^/mute%s+(%d+)%s+(%d+)%s+(.+)")
+        v_rg, v_tempo, v_motivo, v_tipo = rg, tempo .. " dias", motivo, "MUTE"
         aguardandoConfirmacao = true
     end
 end
@@ -6618,11 +6686,14 @@ local function setor_onServerMessage(color, text)
 
     -- PROCESSAMENTO DE PUNIÇÕES REGISTRADAS
     if aguardandoConfirmacao then
-        if cleanText:find("HZ%-ADMIN") then
+        if cleanText:find("HZ%-ADMIN")
+            and tostring(cleanText):find(tostring(v_rg), 1, true) then
             local nick = cleanText:match("[Jj]ogador%(a%)%s+([%a%d_]+)")
             if nick and nick:lower() ~= nomeAdmin:lower() then
-                local acao = (v_tipo == "BAN") and "baniu" or "prendeu"
-                local url = (v_tipo == "BAN") and WEBHOOKS.BAN or WEBHOOKS.CADEIA
+                local acao = v_tipo == "BAN" and "baniu"
+                    or (v_tipo == "MUTE" and "mutou" or "prendeu")
+                local url = v_tipo == "BAN" and WEBHOOKS.BAN
+                    or (v_tipo == "MUTE" and WEBHOOKS.MUTE or WEBHOOKS.CADEIA)
                 enviarTudo(nick, v_rg, v_tempo, v_motivo, acao, url, v_tipo)
                 aguardandoConfirmacao = false
             end
@@ -6921,7 +6992,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.46",
+    versao = "2.48",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
