@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.94'
+local VERSION = '3.96'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -523,13 +523,22 @@ local function moduloAtivo(id)
     return moduloPermitido(id) and cfg.modulos[id] ~= false
 end
 
+function _G.HZMobileSincronizarSaciarme()
+    if staffLogada and moduloAtivo('automacoes_staff') then
+        -- Ao ativar durante a sessao, segue a mesma regra do login:
+        -- primeiro envio em 30 segundos e depois a cada 15 minutos.
+        saciarmeProximo = relogioAtendimento() + SACIARME_PRIMEIRO_ATRASO
+    else
+        saciarmeProximo = 0
+    end
+end
+
 local function definirPerfil(nome, cargo, logado)
     nome, cargo = trim(nome), trim(cargo)
     if nome == '' or nivelCargo(cargo) == 0 then return false end
     cfg.dados.nome, cfg.dados.cargo = nome, cargo
     staffLogada = logado ~= false
-    saciarmeProximo = staffLogada
-        and (relogioAtendimento() + SACIARME_PRIMEIRO_ATRASO) or 0
+    _G.HZMobileSincronizarSaciarme()
     inicfg.save(cfg, CONFIG_FILE)
     return true
 end
@@ -2298,6 +2307,7 @@ local function registrarComandos()
         end
         if not moduloPermitido(nome) then return chat('{FF5555}', 'Modulo bloqueado para o seu cargo.') end
         cfg.modulos[nome] = estado == 'on'
+        if nome == 'automacoes_staff' then _G.HZMobileSincronizarSaciarme() end
         inicfg.save(cfg, CONFIG_FILE)
         chat('{3EDC81}', nome .. ' = ' .. estado)
     end)
@@ -2574,6 +2584,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
                 return false
             else
                 cfg.modulos[id] = cfg.modulos[id] == false
+                if id == 'automacoes_staff' then _G.HZMobileSincronizarSaciarme() end
                 inicfg.save(cfg, CONFIG_FILE)
             end
             lua_thread.create(function() wait(150) abrirModulos(modsCategoriaAtual) end)
@@ -2997,9 +3008,10 @@ function main()
     -- sob comando explicito: /setoratualizar.
     while true do
         wait(0)
-        if staffLogada and saciarmeProximo > 0
+        if staffLogada and moduloAtivo('automacoes_staff')
+            and saciarmeProximo > 0
             and relogioAtendimento() >= saciarmeProximo then
-            sampSendChat('/saciarme')
+            sampSendChat('/god')
             saciarmeProximo = relogioAtendimento() + SACIARME_INTERVALO
         end
         if staffLogada and moduloAtivo('automacoes_staff') then
