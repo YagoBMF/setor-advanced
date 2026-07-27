@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.60")
+script_version("2.61")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -2784,18 +2784,9 @@ local function resolverPrimeiroArgumentoComoRG(cmd)
             return false
         end
 
-        local rgSeguroTv = resolverRGDaOpcaoJogador(escolhidoTv)
         local nickSeguroTv = tostring(escolhidoTv.nick or alvo)
-
-        if rgSeguroTv and rgSeguroTv ~= "" then
-            lastTvRequestedRG = tostring(rgSeguroTv)
-            rgTeladoAtual = tostring(rgSeguroTv)
-            nickPendenteCache = nickSeguroTv
-            nickTeladoAtual = nickSeguroTv
-            return montarNovoComando(rgSeguroTv)
-        end
-
-        -- Sem RG confiavel, usa o clique real da TAB para nao enviar ID como RG.
+        -- /tv por nome reproduz a selecao real da TAB. O cache de RG pode
+        -- estar antigo porque IDs sao reutilizados e nao deve decidir o alvo.
         telarJogadorOnlinePelaTAB(escolhidoTv.id, nickSeguroTv)
         return false
     end
@@ -3684,14 +3675,16 @@ local seletorPressUp = false
 local seletorPressDown = false
 local seletorPressEnter = false
 local seletorPressEsc = false
+_G.HZSeletorEnterLiberado = _G.HZSeletorEnterLiberado ~= false
 
 function _G.HZPrepararTeclasSeletor()
     seletorPressUp = false
     seletorPressDown = false
     seletorPressEnter = false
     seletorPressEsc = false
-    -- Ignora somente o Enter que acabou de enviar o comando no chat.
-    _G.HZSeletorIgnorarEnterAte = (os.clock and os.clock() or 0) + 0.35
+    -- So aceita um novo Enter depois que o Enter usado para enviar o
+    -- comando no chat for completamente solto.
+    _G.HZSeletorEnterLiberado = false
 end
 
 local function fecharSeletorJogador()
@@ -3747,12 +3740,14 @@ local function setor_onWindowMessage(msg, wparam, lparam)
                 if wparam == VK_UP then seletorPressUp = true end
                 if wparam == VK_DOWN then seletorPressDown = true end
                 if wparam == VK_RETURN_SELETOR then
-                    local agoraEnter = os.clock and os.clock() or 0
-                    if agoraEnter >= tonumber(_G.HZSeletorIgnorarEnterAte or 0) then
+                    if _G.HZSeletorEnterLiberado == true then
                         seletorPressEnter = true
                     end
                 end
                 if wparam == VK_ESCAPE_SELETOR then seletorPressEsc = true end
+            end
+            if ehKeyUp and wparam == VK_RETURN_SELETOR then
+                _G.HZSeletorEnterLiberado = true
             end
 
             -- Consome a tecla para o personagem nao andar/nem abrir o menu do GTA.
@@ -3809,8 +3804,19 @@ local function executarOpcaoSeletor(p)
     if not p then return end
 
     local nick = tostring(p.nick or "Desconhecido")
-    local rg = resolverRGDaOpcaoJogador(p)
     local id = p.id and tostring(p.id) or nil
+    local nomeCmdInicial =
+        tostring(seletorComandoOriginal or ""):match("^%s*/(%S+)") or ""
+
+    -- A opcao do /tv veio da lista online. Executa o clique real da TAB
+    -- sem consultar um RG historico antes de telar.
+    if nomeCmdInicial:lower() == "tv" and id then
+        telarJogadorOnlinePelaTAB(tonumber(id), nick)
+        fecharSeletorJogador()
+        return
+    end
+
+    local rg = resolverRGDaOpcaoJogador(p)
 
     -- Quando o seletor encontra pelo banco de RG, mas o ID atual ainda nao esta
     -- ligado no cache online, reconcilia pela TAB antes de executar o comando.
@@ -5816,13 +5822,9 @@ local function setor_main()
                         (os.clock and os.clock() or 0) + 2
                     print("[SETOR PC] Visual Staff: falha transitoria; nova tentativa em 2s: "
                         .. tostring(erro))
-                    if not _G.HZVisualStaffErroAvisadoPc then
-                        _G.HZVisualStaffErroAvisadoPc = true
-                        sampAddChatMessage(
-                            "{FFB347}[SETOR] Visual Staff encontrou uma falha temporaria e tentara novamente.",
-                            -1
-                        )
-                    end
+                    -- A recuperacao ocorre automaticamente. O detalhe permanece
+                    -- apenas no log para nao confundir outros comandos no chat.
+                    _G.HZVisualStaffErroAvisadoPc = true
                 end
             end
         end)
@@ -7083,7 +7085,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.60",
+    versao = "2.61",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
