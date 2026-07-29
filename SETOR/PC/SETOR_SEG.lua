@@ -1478,12 +1478,15 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.70")
+script_version("2.75")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
 -- ============================================================
 local WEBHOOKS = {
+    LOG             = "https://discord.com/api/webhooks/1472343208477593822/AsrnjXuzTjPhPZM_W9QDmGylJ6uPL5mJZJyheDwFB1FzAYO82jrrV1VBor4Xkh1d0KO0",
+    LOG_ATENDIMENTO = "https://discord.com/api/webhooks/1519019925547778101/KxSUL2jVtyG-hqKBiH2icEtuUJ81UV4qiCvKmS7sfIgeodNYkX3T3u8pw_ik0AyqWmwp",
+    FORM_ATENDIMENTO = "https://discord.com/api/webhooks/1519027274790211755/TnWmJiUoO2pQy_zPuB79687valMm4HL_zc46emkjLgQuoe20-ZXOyDn_K249za72r3sT",
     -- Punicoes já existentes no painel
     BAN             = "https://discord.com/api/webhooks/1472343861719339212/BbCTngmkr9YZH5W7PiCVx_IjhC6eboyI072MlddFaGUzQ39i1g9FXI0AcgIJavP3dzdo",
     CADEIA          = "https://discord.com/api/webhooks/1472343962797998090/0zYDFcEW_q7pfrtMYmwk2_hijr33Bb_tS-GyXktfwg3Uvj1ZzAlMtgXk-VX5S5uBlGVU",
@@ -3992,11 +3995,15 @@ function _G.HZDesenharVisualStaffPc()
         _G.HZVisualStaffProximaVarreduraPc = agora + 0.25
         _G.HZVisualStaffJogadoresPc = {}
         local maxId = math.max(0, tonumber(sampGetMaxPlayerId(false)) or 0)
+        local meuId = type(sampGetPlayerIdByCharHandle) == "function"
+            and select(2, sampGetPlayerIdByCharHandle(PLAYER_PED)) or -1
         for id = 0, maxId do
             if sampIsPlayerConnected(id) then
-                local existe, ped = sampGetCharHandleBySampPlayerId(id)
-                if existe and ped and ped ~= PLAYER_PED then
-                    _G.HZVisualStaffJogadoresPc[#_G.HZVisualStaffJogadoresPc + 1] = { id = id, ped = ped }
+                if tonumber(id) ~= tonumber(meuId) then
+                    -- A lista guarda IDs conectados, nao handles. O handle
+                    -- remoto pode sumir por um quadro durante streaming,
+                    -- entrada em interior ou troca de veiculo.
+                    _G.HZVisualStaffJogadoresPc[#_G.HZVisualStaffJogadoresPc + 1] = { id = id }
                 end
             end
         end
@@ -4009,17 +4016,57 @@ function _G.HZDesenharVisualStaffPc()
             -- O handle e consultado novamente em cada quadro. O SA-MP pode
             -- substituir o personagem remoto ao entrar/sair de um veiculo.
             local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
-            if existe and ped and ped ~= PLAYER_PED
-                and (type(isCharOnScreen) ~= "function" or isCharOnScreen(ped)) then
+            if existe and ped and ped ~= PLAYER_PED then
                 local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 1000 then
                     -- Usa a posicao real do ped, como o wall de referencia.
                     -- Isso evita juntar todos os ocupantes no centro do veiculo.
                     local sx, sy = convert3DCoordsToScreen(x, y, z + 1.10)
-                    if sx and sy then
+                    local telaW, telaH = getScreenResolution()
+                    if sx and sy and sx >= 0 and sy >= 0
+                        and sx <= telaW and sy <= telaH then
                         local emVeiculo = type(isCharInAnyCar) == "function"
                             and isCharInAnyCar(ped)
+                        if emVeiculo and type(storeCarCharIsInNoSave) == "function" then
+                            -- Alguns veiculos entregam a mesma coordenada para
+                            -- todos os ocupantes. Separa somente o desenho na
+                            -- tela, mantendo a posicao real como ancora.
+                            local okCarro, carro = pcall(storeCarCharIsInNoSave, ped)
+                            if okCarro and carro then
+                                local assento = nil
+                                if type(getDriverOfCar) == "function" then
+                                    local okMotorista, motorista = pcall(getDriverOfCar, carro)
+                                    if okMotorista and motorista == ped then assento = -1 end
+                                end
+                                if assento == nil
+                                    and type(getCharInCarPassengerSeat) == "function" then
+                                    for lugar = 0, 7 do
+                                        local okLugar, ocupante = pcall(
+                                            getCharInCarPassengerSeat, carro, lugar)
+                                        if okLugar and ocupante == ped then
+                                            assento = lugar
+                                            break
+                                        end
+                                    end
+                                end
+                                if assento ~= nil then
+                                    local modelo = type(getCarModel) == "function"
+                                        and tonumber(getCarModel(carro)) or 0
+                                    if _G.HZModelosMotoVisualPc[modelo] then
+                                        sx = sx + (assento == -1 and -30 or 30)
+                                        sy = sy + (assento == -1 and 0 or 12)
+                                    else
+                                        local coluna = assento == -1 and -1
+                                            or ((assento % 2 == 0) and 1 or -1)
+                                        local fila = assento <= 0 and 0
+                                            or (math.floor((assento - 1) / 2) + 1)
+                                        sx = sx + coluna * 46
+                                        sy = sy + fila * 15
+                                    end
+                                end
+                            end
+                        end
                         local nome = tostring(sampGetPlayerNickname(item.id) or "?")
                         if type(sampIsPlayerPaused) == "function" then
                             local okPausa, pausado = pcall(sampIsPlayerPaused, item.id)
@@ -5963,22 +6010,31 @@ function enviarTudo(nick, id_ou_rg, tempo, motivo, acao, url, tipoPunicao)
     lua_thread.create(function()
         local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
 
+        local logMsg = string.format(
+            "[%s] HZ-ADMIN: %s %s o(a) jogador(a) %s %s por %s (Motivo: %s)",
+            dataHora, staffLog, acao, nick, id_ou_rg, tempo, motivo)
         local formMsg = string.format("```\nADM: %s\nNICK: %s\nRG: %s\nTEMPO: %s\nMOTIVO: %s\nPROVAS: \n```",
             staffLog, nick, id_ou_rg, tempo, motivo)
+        local payloadLog = '{"content":"' .. escaparJsonDiscord(logMsg) .. '"}'
         local payloadHora = '{"content":"' .. escaparJsonDiscord("[" .. dataHora .. "]") .. '"}'
         local payloadForm = '{"content":"' .. escaparJsonDiscord(formMsg) .. '"}'
 
+        local okLog = pcall(requests.post, WEBHOOKS.LOG, {
+            data = payloadLog,
+            headers = {["Content-Type"] = "application/json"}
+        })
+        wait(1100)
         local okHora = pcall(requests.post, url, {
             data = payloadHora,
             headers = {["Content-Type"] = "application/json"}
         })
-        wait(700)
+        wait(1100)
         local okForm, respostaForm = pcall(requests.post, url, {
             data = payloadForm,
             headers = {["Content-Type"] = "application/json"}
         })
 
-        if okHora and okForm and respostaForm then
+        if okLog and okHora and okForm and respostaForm then
             sampAddChatMessage("{00FF00}[SISTEMA]: Registro de " .. tipoPunicao .. " enviado!", -1)
         else
             sampAddChatMessage("{FF5555}[SETOR]: Falha ao enviar registro de " .. tipoPunicao .. " ao Discord.", -1)
@@ -6731,7 +6787,6 @@ local function setor_onServerMessage(color, text)
         else
             local nick = cleanText:match("[Jj]ogador%(a%)%s+([%a%d_]+)")
             local textoLower = tostring(cleanText):lower()
-            local confirmaRG = tostring(cleanText):find(tostring(v_rg), 1, true) ~= nil
             local confirmaMute = v_tipo == "MUTE"
                 and (textoLower:find("mut", 1, true) ~= nil
                     or textoLower:find("silenci", 1, true) ~= nil)
@@ -6739,7 +6794,7 @@ local function setor_onServerMessage(color, text)
                 or (nick and nick:lower() == tostring(_G.HZNickEsperadoPunicao):lower())
             local confirmouAlvo = v_tipo == "MUTE"
                 and confirmaMute and confirmaNick
-                or (v_tipo ~= "MUTE" and confirmaRG)
+                or (v_tipo ~= "MUTE")
 
             if cleanText:find("HZ%-ADMIN") and confirmouAlvo
                 and nick and nick:lower() ~= nomeAdmin:lower() then
@@ -6909,15 +6964,24 @@ function finalizarTudo(statusTexto)
     local dataF, dHoraLog = os.date("%d/%m/%Y"), os.date("%d/%m/%Y - %H:%M:%S")
 
     local logGeral = string.format("[%s] HZ-ADMIN: O(a) %s %s atendeu o(a) jogador(a) %s — atendimento durou %s — %s", dHoraLog, cargoAdmin, nomeAdmin, nickJogadorAtendido, tempoF, statusTexto)
-    local corpoForm = string.format("**REGISTRO DE ATENDIMENTO**\\n**DATA:** %s\\n**DURAÇÃO:** %s\\n**STATUS:** %s\\n**ATENDENTE:** %s\\n**JOGADOR:** %s\\n**CONVERSA:**\\n```\\n%s\\n```", dataF, tempoF, statusTexto, nomeAdmin, nickJogadorAtendido, table.concat(historicoConversa, "\\n"))
+    local corpoForm = string.format("**REGISTRO DE ATENDIMENTO**\n**DATA:** %s\n**DURAÇÃO:** %s\n**STATUS:** %s\n**ATENDENTE:** %s\n**JOGADOR:** %s\n**CONVERSA:**\n```\n%s\n```", dataF, tempoF, statusTexto, nomeAdmin, nickJogadorAtendido, table.concat(historicoConversa, "\n"))
 
-    -- Logs de atendimento desativados para otimizar o painel.
-    -- Mantido somente o fechamento local do atendimento.
-    -- lua_thread.create(function()
-    --     requests.post(WEBHOOKS.LOG_ATENDIMENTO, {data = '{"content":"'..logGeral..'"}', headers = {["Content-Type"] = "application/json"}})
-    --     wait(1100)
-    --     requests.post(WEBHOOKS.FORM_ATENDIMENTO, {data = '{"content":"'..corpoForm..'"}', headers = {["Content-Type"] = "application/json"}})
-    -- end)
+    lua_thread.create(function()
+        local okLog = pcall(requests.post, WEBHOOKS.LOG_ATENDIMENTO, {
+            data = '{"content":"' .. escaparJsonDiscord(logGeral) .. '"}',
+            headers = {["Content-Type"] = "application/json"}
+        })
+        wait(1100)
+        local okForm, respostaForm = pcall(requests.post, WEBHOOKS.FORM_ATENDIMENTO, {
+            data = '{"content":"' .. escaparJsonDiscord(corpoForm) .. '"}',
+            headers = {["Content-Type"] = "application/json"}
+        })
+        if okLog and okForm and respostaForm then
+            sampAddChatMessage("{00FF00}[SETOR]: Registro de atendimento enviado ao Discord.", -1)
+        else
+            sampAddChatMessage("{FF5555}[SETOR]: Falha ao enviar o atendimento ao Discord.", -1)
+        end
+    end)
     -- Encerra tambem qualquer estado visual residual do painel.
     emAtendimento = false
     jogadorCaiu = false
@@ -7047,7 +7111,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.70",
+    versao = "2.75",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
