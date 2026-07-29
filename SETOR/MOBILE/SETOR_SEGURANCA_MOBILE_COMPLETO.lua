@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.99'
+local VERSION = '4.01'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -27,6 +27,8 @@ local HAS_EXTERNAL_UPDATER = type(doesFileExist) == 'function' and doesFileExist
 
 local WEBHOOKS = {
     LOG = 'https://discord.com/api/webhooks/1472343208477593822/AsrnjXuzTjPhPZM_W9QDmGylJ6uPL5mJZJyheDwFB1FzAYO82jrrV1VBor4Xkh1d0KO0',
+    LOG_ATENDIMENTO = 'https://discord.com/api/webhooks/1519019925547778101/KxSUL2jVtyG-hqKBiH2icEtuUJ81UV4qiCvKmS7sfIgeodNYkX3T3u8pw_ik0AyqWmwp',
+    FORM_ATENDIMENTO = 'https://discord.com/api/webhooks/1519027274790211755/TnWmJiUoO2pQy_zPuB79687valMm4HL_zc46emkjLgQuoe20-ZXOyDn_K249za72r3sT',
     BAN = 'https://discord.com/api/webhooks/1472343861719339212/BbCTngmkr9YZH5W7PiCVx_IjhC6eboyI072MlddFaGUzQ39i1g9FXI0AcgIJavP3dzdo',
     CADEIA = 'https://discord.com/api/webhooks/1472343962797998090/0zYDFcEW_q7pfrtMYmwk2_hijr33Bb_tS-GyXktfwg3Uvj1ZzAlMtgXk-VX5S5uBlGVU',
     MUTE = 'https://discord.com/api/webhooks/1472344170520907939/BTLBSNDhp054jKOLU7_3Q-eXunG4SM3g2K7uhRKv_3wIaKgp997daaLxwvLh2sYbJfUV',
@@ -38,7 +40,10 @@ local WEBHOOKS = {
     PRENDERARMAS = 'https://discord.com/api/webhooks/1519149792872108062/Nfnx7YOtGbBcDYvAbV3K9Uns6yiwZEWmgWWfLqXt0u68ejT4FOYG8HvjLxgIYFu_n6xB',
     SETVIDA = 'https://discord.com/api/webhooks/1519338573218840728/eiMlWVsK_0FqTHL-AwDNDFj0tICtgbkmqOlSN1dyaFCh-VOfQlvWfKCfDP49Kh-_iGjN',
     SETCOLETE = 'https://discord.com/api/webhooks/1519341309121269921/Jeb-TRF1I2zj3rrfwqx3pGSTGEdKYiHWHhFKW-dBf2hwiXZRtFmQZjusZjwFu2LsOFfJ',
-    REVIVER = 'https://discord.com/api/webhooks/1519353929492860968/FjWWaoy1g2F3Jf05XzRFCe84L4ZZOczEsvD9FAAtR_ZhTclMxp14agsXIhgZG3dudTGH'
+    REVIVER = 'https://discord.com/api/webhooks/1519353929492860968/FjWWaoy1g2F3Jf05XzRFCe84L4ZZOczEsvD9FAAtR_ZhTclMxp14agsXIhgZG3dudTGH',
+    IRPOSTO = 'https://discord.com/api/webhooks/1519374390360539228/erwvupCvH1jEOA1e9HHZlp4CCyfcV2N1f-ktB5v1sz6nMyh_koUUfAJVnu2l9nQeGT1g',
+    IRCASA = 'https://discord.com/api/webhooks/1519374377999663328/pCuRmkQN53eXJBqOKck_DtBxzx0NlNxjFzu1pIvs7lKrIOKPxNbQ0wjB0rapQ3XpZKQs',
+    IREMPRESA = 'https://discord.com/api/webhooks/1519374367719428246/gVjTpRPrviLTqAUXnpTxYz-P_NlxfG7kEQmykJI8hvQE7U9VzZuNtPGauVIUF3P4Bg7z'
 }
 
 local cfg = inicfg.load({
@@ -148,6 +153,7 @@ local suportePosCarregada, suporteUltimoSave = false, 0
 local emAtendimento, atendimentoNick, atendimentoRg = false, '', ''
 local atendimentoInicio = 0
 local atendimentoOffAte, atendimentoTempoFinal = 0, 0
+_G.HZMobileAtendimentoHistorico = _G.HZMobileAtendimentoHistorico or {}
 
 local function relogioAtendimento()
     if type(getGameTimer) == 'function' then
@@ -708,6 +714,49 @@ local function logPunicao(nick, rg, tempo, motivo, acao, url, tipo)
         wait(1100)
         post(url, form, 'Registro de ' .. tipo .. ' enviado.')
     end)
+end
+
+function _G.HZFinalizarAtendimentoMobile(status)
+    if not emAtendimento then return end
+    local agora = relogioAtendimento()
+    atendimentoTempoFinal = math.max(0, agora - (tonumber(atendimentoInicio) or agora))
+    local minutos = math.floor(atendimentoTempoFinal / 60)
+    local segundos = atendimentoTempoFinal % 60
+    local duracao = string.format('%d minuto%s e %d segundo%s',
+        minutos, minutos ~= 1 and 's' or '', segundos, segundos ~= 1 and 's' or '')
+    local resultado = tostring(status or 'Atendimento finalizado')
+    local conversa = table.concat(_G.HZMobileAtendimentoHistorico or {}, '\n')
+    if #conversa > 1300 then
+        conversa = '[... inicio reduzido ...]\n' .. conversa:sub(-1300)
+    end
+    local geral = string.format(
+        '[%s] HZ-ADMIN: O(a) %s %s atendeu o(a) jogador(a) %s - atendimento durou %s - %s',
+        os.date('%d/%m/%Y - %H:%M:%S'), tostring(cfg.dados.cargo),
+        tostring(cfg.dados.nome), tostring(atendimentoNick), duracao, resultado)
+    local formulario = string.format(
+        '**REGISTRO DE ATENDIMENTO**\n**DATA:** %s\n**DURACAO:** %s\n**STATUS:** %s\n**ATENDENTE:** %s\n**JOGADOR:** %s\n**RG:** %s\n**CONVERSA:**\n```\n%s\n```',
+        os.date('%d/%m/%Y'), duracao, resultado, tostring(cfg.dados.nome),
+        tostring(atendimentoNick), tostring(atendimentoRg), conversa)
+    post(WEBHOOKS.LOG_ATENDIMENTO, geral)
+    lua_thread.create(function()
+        wait(1100)
+        post(WEBHOOKS.FORM_ATENDIMENTO, formulario,
+            'Registro de atendimento enviado ao Discord.')
+    end)
+    emAtendimento, atendimentoOffAte = false, agora + 5
+end
+
+function _G.HZLogLocalMobile(tipo, id)
+    local dados = {
+        POSTO = {WEBHOOKS.IRPOSTO, 'Foi Ate o Posto'},
+        CASA = {WEBHOOKS.IRCASA, 'Foi Ate a Casa'},
+        EMPRESA = {WEBHOOKS.IREMPRESA, 'Foi Ate a Empresa'}
+    }
+    local info = dados[tostring(tipo or '')]
+    if not info then return end
+    post(info[1], string.format('[%s] HZ-ADMIN: O(a) %s %s %s (ID %s)',
+        os.date('%d/%m/%Y - %H:%M:%S'), tostring(cfg.dados.cargo),
+        tostring(cfg.dados.nome), info[2], tostring(id)))
 end
 
 local function logAcao(tipo, rg, extra)
@@ -2482,10 +2531,11 @@ function samp.onPlayerQuit(playerId, reason)
     local saiuAtendido = tostring(playerId) == tostring(atendimentoRg)
         or (nickSaida ~= '' and nickSaida:lower() == tostring(atendimentoNick):lower())
     if saiuAtendido then
-        atendimentoTempoFinal = math.max(0, relogioAtendimento()
-            - (tonumber(atendimentoInicio) or relogioAtendimento()))
-        emAtendimento, atendimentoOffAte = false, relogioAtendimento() + 5
         chat('{FF5555}', 'Atendimento encerrado: ' .. atendimentoNick .. ' desconectou.')
+        _G.HZMobileAtendimentoHistorico[#_G.HZMobileAtendimentoHistorico + 1] =
+            '[' .. os.date('%H:%M:%S') .. '] O jogador desconectou.'
+        _G.HZFinalizarAtendimentoMobile(
+            'Atendimento finalizado - jogador desconectou durante o atendimento')
     end
 end
 
@@ -2825,6 +2875,13 @@ function samp.onSendCommand(command)
     -- /la continua passando normalmente para que o servidor confirme o login.
     if not staffLogada then return end
 
+    local tipoLocal, idLocal = command:match('^/ir(posto)%s+(%d+)%s*$')
+    if not tipoLocal then tipoLocal, idLocal = command:match('^/ir(casa)%s+(%d+)%s*$') end
+    if not tipoLocal then tipoLocal, idLocal = command:match('^/ir(empresa)%s+(%d+)%s*$') end
+    if tipoLocal and idLocal then
+        _G.HZLogLocalMobile(tipoLocal:upper(), idLocal)
+    end
+
     -- Converte nomes abreviados em RG confirmado. Se houver mais de um
     -- resultado, abre uma tabela com Nome, ID, RG e Level para escolha.
     local nomeComando, alvoNome, restante =
@@ -2865,8 +2922,12 @@ function samp.onSendCommand(command)
         painelTvFlutuante, rgAtual, nickAtual, levelAtualConfirmado = false, nil, nil, nil
     end
     if cmdLimpo == '/fa' then
-        emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
-        atendimentoOffAte, atendimentoTempoFinal = 0, 0
+        if emAtendimento then
+            _G.HZMobileAtendimentoHistorico[#_G.HZMobileAtendimentoHistorico + 1] =
+                '[' .. os.date('%H:%M:%S') .. '] Atendimento finalizado manualmente.'
+            _G.HZFinalizarAtendimentoMobile(
+                'Atendimento finalizado pelo atendente ' .. tostring(cfg.dados.nome))
+        end
     end
     local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
     if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
@@ -2916,6 +2977,7 @@ function samp.onServerMessage(color, text)
         atendimentoNick, atendimentoRg = nomeAtendimento, rgAtendimento
         atendimentoInicio, emAtendimento = relogioAtendimento(), true
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
+        if atendimentoNovo then _G.HZMobileAtendimentoHistorico = {} end
         -- A confirmacao do servidor garante que o jogador esta ON e que o
         -- painel de atendimento acabou de ser aberto. Envia uma unica saudacao.
         if atendimentoNovo then
@@ -2927,10 +2989,16 @@ function samp.onServerMessage(color, text)
             end)
         end
     end
+    if emAtendimento and (ct:find('Chat%-Suporte') or ct:find('Chat Suporte', 1, true)) then
+        local mensagem = ct:match(':%s*(.*)$') or ct
+        _G.HZMobileAtendimentoHistorico[#_G.HZMobileAtendimentoHistorico + 1] =
+            '[' .. os.date('%H:%M:%S') .. '] ' .. mensagem
+    end
     if emAtendimento and (baixo:find('atendimento finalizado', 1, true)
         or baixo:find('finalizou o atendimento', 1, true)) then
-        emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
-        atendimentoOffAte, atendimentoTempoFinal = 0, 0
+        _G.HZMobileAtendimentoHistorico[#_G.HZMobileAtendimentoHistorico + 1] =
+            '[' .. os.date('%H:%M:%S') .. '] Atendimento confirmado como finalizado.'
+        _G.HZFinalizarAtendimentoMobile('Atendimento finalizado')
     end
 
     -- Identificacao automatica segura: mensagens globais de login de outros
@@ -3003,8 +3071,7 @@ function samp.onServerMessage(color, text)
         end
     end
 
-    if pendente and ct:find('HZ%-ADMIN')
-        and tostring(ct):find(tostring(pendente.rg), 1, true) then
+    if pendente and ct:find('HZ%-ADMIN') then
         local alvoNick = ct:match('[Jj]ogador%(a%)%s+([%w_]+)') or (cache[pendente.rg] and cache[pendente.rg].nick)
         if alvoNick and alvoNick:lower() ~= tostring(cfg.dados.nome):lower() then
             local acao = pendente.tipo == 'BAN' and 'baniu'
