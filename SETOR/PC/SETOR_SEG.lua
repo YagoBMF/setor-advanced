@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.75")
+script_version("2.76")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -6785,8 +6785,23 @@ local function setor_onServerMessage(color, text)
             _G.HZConfirmacaoPunicaoAte = 0
             _G.HZNickEsperadoPunicao = ""
         else
-            local nick = cleanText:match("[Jj]ogador%(a%)%s+([%a%d_]+)")
             local textoLower = tostring(cleanText):lower()
+            if v_tipo == "MUTE" and (textoLower:find("erro", 1, true)
+                or textoLower:find("offline", 1, true)
+                or textoLower:find("desconect", 1, true)) then
+                aguardandoConfirmacao = false
+                _G.HZConfirmacaoPunicaoAte = 0
+                _G.HZNickEsperadoPunicao = ""
+                return
+            end
+            local nick = cleanText:match("[Jj]ogador%(a%)%s+([%a%d_]+)")
+                or cleanText:match("[Jj]ogador%s+([%a%d_]+)")
+                or cleanText:match("[Pp]layer%s+([%a%d_]+)")
+                or cleanText:match("([%a%d_]+)%s*%[" .. tostring(v_rg) .. "%]")
+                or (tostring(_G.HZNickEsperadoPunicao or "") ~= ""
+                    and tostring(_G.HZNickEsperadoPunicao))
+                or tostring(getInfoRG(v_rg) or "")
+            if nick == "" then nick = "Desconhecido" end
             local confirmaMute = v_tipo == "MUTE"
                 and (textoLower:find("mut", 1, true) ~= nil
                     or textoLower:find("silenci", 1, true) ~= nil)
@@ -6796,7 +6811,9 @@ local function setor_onServerMessage(color, text)
                 and confirmaMute and confirmaNick
                 or (v_tipo ~= "MUTE")
 
-            if cleanText:find("HZ%-ADMIN") and confirmouAlvo
+            local confirmouMensagem = v_tipo == "MUTE" and confirmaMute
+                or cleanText:find("HZ%-ADMIN") ~= nil
+            if confirmouMensagem and confirmouAlvo
                 and nick and nick:lower() ~= nomeAdmin:lower() then
                 local acao = v_tipo == "BAN" and "baniu"
                     or (v_tipo == "MUTE" and "mutou" or "prendeu")
@@ -7111,7 +7128,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.75",
+    versao = "2.76",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
