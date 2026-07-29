@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.01'
+local VERSION = '4.02'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -3071,8 +3071,20 @@ function samp.onServerMessage(color, text)
         end
     end
 
-    if pendente and ct:find('HZ%-ADMIN') then
-        local alvoNick = ct:match('[Jj]ogador%(a%)%s+([%w_]+)') or (cache[pendente.rg] and cache[pendente.rg].nick)
+    if pendente and pendente.tipo == 'MUTE'
+        and (baixo:find('erro', 1, true) or baixo:find('offline', 1, true)
+            or baixo:find('desconect', 1, true)) then
+        pendente = nil
+    end
+    local confirmaMutePendente = pendente and pendente.tipo == 'MUTE'
+        and (baixo:find('mut', 1, true) or baixo:find('silenci', 1, true))
+    if pendente and (ct:find('HZ%-ADMIN') or confirmaMutePendente) then
+        local alvoNick = ct:match('[Jj]ogador%(a%)%s+([%w_]+)')
+            or ct:match('[Jj]ogador%s+([%w_]+)')
+            or ct:match('[Pp]layer%s+([%w_]+)')
+            or ct:match('([%w_]+)%s*%[' .. tostring(pendente.rg) .. '%]')
+            or (cache[pendente.rg] and cache[pendente.rg].nick)
+            or 'Desconhecido'
         if alvoNick and alvoNick:lower() ~= tostring(cfg.dados.nome):lower() then
             local acao = pendente.tipo == 'BAN' and 'baniu'
                 or (pendente.tipo == 'MUTE' and 'mutou' or 'prendeu')
