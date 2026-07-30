@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.02'
+local VERSION = '4.04'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -696,7 +696,13 @@ local function post(url, mensagem, retorno)
             headers = {['Content-Type'] = 'application/json'}
         })
         if retorno then
-            if ok and res then chat('{3EDC81}', retorno) else chat('{FF5555}', 'Falha ao enviar o registro ao Discord.') end
+            local codigo = type(res) == 'table'
+                and tonumber(res.status_code or res.status or res.code) or 0
+            if ok and codigo >= 200 and codigo < 300 then
+                chat('{3EDC81}', retorno)
+            else
+                chat('{FF5555}', 'Discord recusou o registro (HTTP ' .. tostring(codigo) .. ').')
+            end
         end
     end)
 end
@@ -3013,8 +3019,8 @@ function samp.onServerMessage(color, text)
     local confirmouLogin = baixo:find('logou', 1, true)
         and (baixo:find('staff', 1, true) or baixo:find('administra', 1, true))
     local nomeLoginMensagem = ct:match(
-        '[Aa][Dd][Mm][Ii][Nn]:%s*[Oo]%(A%)%s+.-%s+([%w_]+)%[%d+%]%s+logou')
-        or ct:match('[Oo]la%s+.-%s+([%w_]+),%s+voce%s+logou')
+        '[Aa][Dd][Mm][Ii][Nn]:%s*[Oo]%(A%)%s+.-%s+([^%s%[]+)%[%d+%]%s+logou')
+        or ct:match('[Oo]la%s+.-%s+([^,%s]+),%s+voce%s+logou')
     local loginEhMeu = loginPendente and meuNick ~= ''
         and nomeLoginMensagem ~= nil
         and tostring(nomeLoginMensagem):lower() == meuNick:lower()
