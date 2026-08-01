@@ -446,7 +446,7 @@ local motivosCadeia = {
     {"Anti RP", 200, "Anti RP"},
     {"Anti-RP - Assalto em veiculo", 200, "Assalto em veiculo"},
     {"Anti-RP - Uso indevido de profissao", 200, "Uso indevido de profissao"},
-    {"Anti-RP - Algemar/taser durante trocacao", 200, "Algemar ou usar taser durante trocacao"},
+    {"Anti-RP - Taser/Algema em trocacao", 200, "Taser/Algema em trocacao"},
     {"Anti-RP - Abuso de safe", 200, "Abuso de safe"},
     {"PTR solo - Policial solo em acao", 250, "Policial solo em acao"},
     {"VDM - Matar/Ferir com veiculo", 250, "Matar/Ferir com veiculo"},
@@ -1478,7 +1478,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.76")
+script_version("2.79")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -2642,7 +2642,7 @@ function _G.HZAvisosAC.comando(cmd)
     if rg then
         _G.HZAvisosAC.enviar(
             "Respondi a duvida do Player " .. _G.HZAvisosAC.nomePorRG(rg),
-            450
+            5000
         )
     end
 end
@@ -5980,6 +5980,12 @@ local function escaparJsonDiscord(valor)
         :gsub("\n", "\\n")
 end
 
+function _G.HZDiscordRespostaOk(resposta)
+    if type(resposta) ~= "table" then return false, 0 end
+    local codigo = tonumber(resposta.status_code or resposta.status or resposta.code) or 0
+    return codigo >= 200 and codigo < 300, codigo
+end
+
 function enviarSimples(webhook, msg)
     if type(webhook) ~= "string" or webhook == "" then
         return false
@@ -6019,12 +6025,12 @@ function enviarTudo(nick, id_ou_rg, tempo, motivo, acao, url, tipoPunicao)
         local payloadHora = '{"content":"' .. escaparJsonDiscord("[" .. dataHora .. "]") .. '"}'
         local payloadForm = '{"content":"' .. escaparJsonDiscord(formMsg) .. '"}'
 
-        local okLog = pcall(requests.post, WEBHOOKS.LOG, {
+        local okLog, respostaLog = pcall(requests.post, WEBHOOKS.LOG, {
             data = payloadLog,
             headers = {["Content-Type"] = "application/json"}
         })
         wait(1100)
-        local okHora = pcall(requests.post, url, {
+        local okHora, respostaHora = pcall(requests.post, url, {
             data = payloadHora,
             headers = {["Content-Type"] = "application/json"}
         })
@@ -6034,10 +6040,15 @@ function enviarTudo(nick, id_ou_rg, tempo, motivo, acao, url, tipoPunicao)
             headers = {["Content-Type"] = "application/json"}
         })
 
-        if okLog and okHora and okForm and respostaForm then
+        local logAceito, codigoLog = _G.HZDiscordRespostaOk(respostaLog)
+        local horaAceita, codigoHora = _G.HZDiscordRespostaOk(respostaHora)
+        local formAceito, codigoForm = _G.HZDiscordRespostaOk(respostaForm)
+        if okLog and okHora and okForm and logAceito and horaAceita and formAceito then
             sampAddChatMessage("{00FF00}[SISTEMA]: Registro de " .. tipoPunicao .. " enviado!", -1)
         else
-            sampAddChatMessage("{FF5555}[SETOR]: Falha ao enviar registro de " .. tipoPunicao .. " ao Discord.", -1)
+            sampAddChatMessage(string.format(
+                "{FF5555}[SETOR]: Discord recusou %s (HTTP: %s/%s/%s).",
+                tipoPunicao, tostring(codigoLog), tostring(codigoHora), tostring(codigoForm)), -1)
         end
     end)
 end
@@ -6984,7 +6995,7 @@ function finalizarTudo(statusTexto)
     local corpoForm = string.format("**REGISTRO DE ATENDIMENTO**\n**DATA:** %s\n**DURAÇÃO:** %s\n**STATUS:** %s\n**ATENDENTE:** %s\n**JOGADOR:** %s\n**CONVERSA:**\n```\n%s\n```", dataF, tempoF, statusTexto, nomeAdmin, nickJogadorAtendido, table.concat(historicoConversa, "\n"))
 
     lua_thread.create(function()
-        local okLog = pcall(requests.post, WEBHOOKS.LOG_ATENDIMENTO, {
+        local okLog, respostaLog = pcall(requests.post, WEBHOOKS.LOG_ATENDIMENTO, {
             data = '{"content":"' .. escaparJsonDiscord(logGeral) .. '"}',
             headers = {["Content-Type"] = "application/json"}
         })
@@ -6993,10 +7004,14 @@ function finalizarTudo(statusTexto)
             data = '{"content":"' .. escaparJsonDiscord(corpoForm) .. '"}',
             headers = {["Content-Type"] = "application/json"}
         })
-        if okLog and okForm and respostaForm then
+        local logAceito, codigoLog = _G.HZDiscordRespostaOk(respostaLog)
+        local formAceito, codigoForm = _G.HZDiscordRespostaOk(respostaForm)
+        if okLog and okForm and logAceito and formAceito then
             sampAddChatMessage("{00FF00}[SETOR]: Registro de atendimento enviado ao Discord.", -1)
         else
-            sampAddChatMessage("{FF5555}[SETOR]: Falha ao enviar o atendimento ao Discord.", -1)
+            sampAddChatMessage(string.format(
+                "{FF5555}[SETOR]: Discord recusou atendimento (HTTP: %s/%s).",
+                tostring(codigoLog), tostring(codigoForm)), -1)
         end
     end)
     -- Encerra tambem qualquer estado visual residual do painel.
@@ -7128,7 +7143,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.76",
+    versao = "2.79",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
