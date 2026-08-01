@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.04'
+local VERSION = '4.05'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -226,7 +226,7 @@ local PUNICOES_CADEIA = {
     {'Anti RP', 'Anti RP', 200},
     {'Anti-RP - Assalto em veiculo', 'Assalto em veiculo', 200},
     {'Anti-RP - Uso indevido de profissao', 'Uso indevido de profissao', 200},
-    {'Anti-RP - Algemar/taser durante trocacao', 'Algemar ou usar taser durante trocacao', 200},
+    {'Anti-RP - Taser/Algema em trocacao', 'Taser/Algema em trocacao', 200},
     {'Anti-RP - Abuso de safe', 'Abuso de safe', 200},
     {'PTR solo - Policial solo em acao', 'Policial solo em acao', 250},
     {'VDM - Matar/Ferir com veiculo', 'Matar/Ferir com veiculo', 250},
