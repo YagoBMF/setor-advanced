@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.05'
+local VERSION = '4.06'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -2935,6 +2935,21 @@ function samp.onSendCommand(command)
                 'Atendimento finalizado pelo atendente ' .. tostring(cfg.dados.nome))
         end
     end
+
+    -- Aguarda antes de avisar no /ac para nao conflitar com o anti-flood
+    -- do servidor. Este trecho roda apenas quando o /d ja possui um RG.
+    local rgDuvida = command:match('^/d%s+(%d+)%s+.+$')
+    if rgDuvida then
+        local registro = cache[tostring(rgDuvida)]
+        local nomeDuvida = registro and registro.nick or ('RG ' .. tostring(rgDuvida))
+        lua_thread.create(function()
+            wait(5000)
+            if staffLogada then
+                sampSendChat('/ac Respondi a duvida do Player ' .. tostring(nomeDuvida))
+            end
+        end)
+    end
+
     local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
     if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
     local tempo
