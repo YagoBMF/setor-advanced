@@ -425,7 +425,7 @@ local tabelaTempos = {
     ["NRA"] = 100, ["ASM"] = 100, ["NS"] = 200, ["DM"] = 200,
     ["MATAR SEM MOTIVO"] = 200, ["FERIR SEM MOTIVO"] = 200,
     ["ASSALTO LOJA IRREGULAR"] = 150, ["ASSALTO BANCO IRREGULAR"] = 150,
-    ["ANTI RP"] = 200, ["PTR SOLO"] = 250, ["VDM"] = 250,
+    ["ANTI RP"] = 200, ["DIRIGIR FERIDO"] = 200, ["PTR SOLO"] = 250, ["VDM"] = 250,
     ["DB"] = 250, ["AB DESMANCHE"] = 250, ["KOS"] = 250,
     ["PG"] = 250, ["TK"] = 250, ["HK"] = 250, ["SLP"] = 250,
     ["INVASAO SEM AUTORIZACAO"] = 250, ["RDM"] = 250, ["RK"] = 250,
@@ -448,6 +448,7 @@ local motivosCadeia = {
     {"Anti-RP - Uso indevido de profissao", 200, "Uso indevido de profissao"},
     {"Anti-RP - Taser/Algema em trocacao", 200, "Taser/Algema em trocacao"},
     {"Anti-RP - Abuso de safe", 200, "Abuso de safe"},
+    {"Anti-RP - Dirigir Ferido", 200, "Dirigir Ferido"},
     {"PTR solo - Policial solo em acao", 250, "Policial solo em acao"},
     {"VDM - Matar/Ferir com veiculo", 250, "Matar/Ferir com veiculo"},
     {"DB - Atirando de dentro do veiculo", 250, "Atirando de dentro do veiculo"},
@@ -468,9 +469,9 @@ local motivosCadeia = {
     {"Corrupcao", 300}, {"Dark RP", 300}
 }
 local motivosMute = {
-    {"MUCS - Restricao", 3}, {"MUC Atendimento", 3}, {"MUC Duvida", 3},
-    {"MUC Missa", 3}, {"MUC News", 3}, {"MUC OLX", 3},
-    {"MUC /Reportar", 3}, {"MUC Anorg", 3}, {"MUC An", 3},
+    {"MUCS - Restricao", 1}, {"MUC Atendimento", 1}, {"MUC Duvida", 1},
+    {"MUC Missa", 1}, {"MUC News", 1}, {"MUC OLX", 1},
+    {"MUC /Reportar", 1}, {"MUC Anorg", 1}, {"MUC An", 1},
     {"Ofensa Staff/Servidor", 30}, {"Desrespeito", 3}, {"Conteudo sexual", 3},
     {"Flood", 1}
 }
@@ -1478,7 +1479,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.79")
+script_version("2.80")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
