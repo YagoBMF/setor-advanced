@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.06'
+local VERSION = '4.07'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -228,6 +228,7 @@ local PUNICOES_CADEIA = {
     {'Anti-RP - Uso indevido de profissao', 'Uso indevido de profissao', 200},
     {'Anti-RP - Taser/Algema em trocacao', 'Taser/Algema em trocacao', 200},
     {'Anti-RP - Abuso de safe', 'Abuso de safe', 200},
+    {'Anti-RP - Dirigir Ferido', 'Dirigir Ferido', 200},
     {'PTR solo - Policial solo em acao', 'Policial solo em acao', 250},
     {'VDM - Matar/Ferir com veiculo', 'Matar/Ferir com veiculo', 250},
     {'DB - Atirando de dentro do veiculo', 'Atirando de dentro do veiculo', 250},
@@ -267,15 +268,15 @@ _G.HZMobileTabelasPunicao = {
         {'Anti-RP extremo | 20 dias', 'Anti-RP extremo', 20}
     },
     mute = {
-        {'MUCS - Restricao | 3 dias', 'MUCS - Restricao', 3},
-        {'MUC Atendimento | 3 dias', 'MUC Atendimento', 3},
-        {'MUC Duvida | 3 dias', 'MUC Duvida', 3},
-        {'MUC Missa | 3 dias', 'MUC Missa', 3},
-        {'MUC News | 3 dias', 'MUC News', 3},
-        {'MUC OLX | 3 dias', 'MUC OLX', 3},
-        {'MUC /Reportar | 3 dias', 'MUC /Reportar', 3},
-        {'MUC Anorg | 3 dias', 'MUC Anorg', 3},
-        {'MUC An | 3 dias', 'MUC An', 3},
+        {'MUCS - Restricao | 1 dia', 'MUCS - Restricao', 1},
+        {'MUC Atendimento | 1 dia', 'MUC Atendimento', 1},
+        {'MUC Duvida | 1 dia', 'MUC Duvida', 1},
+        {'MUC Missa | 1 dia', 'MUC Missa', 1},
+        {'MUC News | 1 dia', 'MUC News', 1},
+        {'MUC OLX | 1 dia', 'MUC OLX', 1},
+        {'MUC /Reportar | 1 dia', 'MUC /Reportar', 1},
+        {'MUC Anorg | 1 dia', 'MUC Anorg', 1},
+        {'MUC An | 1 dia', 'MUC An', 1},
         {'Ofensa Staff/Servidor | 30 dias', 'Ofensa Staff/Servidor', 30},
         {'Desrespeito | 3 dias', 'Desrespeito', 3},
         {'Conteudo sexual | 3 dias', 'Conteudo sexual', 3},
