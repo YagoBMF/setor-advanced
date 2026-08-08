@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.07'
+local VERSION = '4.08'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -241,7 +241,7 @@ local PUNICOES_CADEIA = {
     {'Invasao sem autorizacao', 'Invasao sem autorizacao', 250},
     {'RDM - Multiplas mortes sem motivo', 'Multiplas mortes sem motivo', 250},
     {'RK - Vinganca apos morte', 'Vinganca apos morte', 250},
-    {'Spam Kill - Abuso de interior para matar', 'Abuso de interior para matar', 250},
+    {'Spawn Kill - Matar ao entrar/sair de interior', 'Matar ao entrar/sair de interior', 250},
     {'CB - Forcar perseguicao', 'Forcar perseguicao', 250},
     {'SAAV - Sem Amor a Vida', 'Sem Amor a Vida', 250},
     {'PK - Ignorar perda de memoria', 'Ignorar perda de memoria', 250},
