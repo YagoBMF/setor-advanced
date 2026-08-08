@@ -429,7 +429,7 @@ local tabelaTempos = {
     ["DB"] = 250, ["AB DESMANCHE"] = 250, ["KOS"] = 250,
     ["PG"] = 250, ["TK"] = 250, ["HK"] = 250, ["SLP"] = 250,
     ["INVASAO SEM AUTORIZACAO"] = 250, ["RDM"] = 250, ["RK"] = 250,
-    ["SPAM KILL"] = 250, ["CORRENDO SAFE"] = 250, ["CL"] = 300, ["COMBAT LOG"] = 300,
+    ["SPAWN KILL"] = 250, ["CORRENDO SAFE"] = 250, ["CL"] = 300, ["COMBAT LOG"] = 300,
     ["CORRUPCAO"] = 300, ["DARK RP"] = 300
 }
 
@@ -461,7 +461,7 @@ local motivosCadeia = {
     {"Invasao sem autorizacao", 250},
     {"RDM - Multiplas mortes sem motivo", 250, "Multiplas mortes sem motivo"},
     {"RK - Vinganca apos morte", 250, "Vinganca apos morte"},
-    {"Spam Kill - Abuso de interior para matar", 250, "Abuso de interior para matar"},
+    {"Spawn Kill - Matar ao entrar/sair de interior", 250, "Matar ao entrar/sair de interior"},
     {"CB - Forcar perseguicao", 250, "Forcar perseguicao"},
     {"SAAV - Sem Amor a Vida", 250, "Sem Amor a Vida"},
     {"PK - Ignorar perda de memoria", 250, "Ignorar perda de memoria"},
@@ -1479,7 +1479,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.80")
+script_version("2.81")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
