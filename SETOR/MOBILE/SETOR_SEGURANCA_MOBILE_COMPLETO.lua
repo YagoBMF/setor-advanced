@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.08'
+local VERSION = '4.09'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -979,6 +979,7 @@ end
 local visualStaffFonte, visualStaffProximaVarredura = nil, 0
 local visualStaffErroAvisado = false
 local visualStaffJogadores = {}
+local visualStaffStatus = {}
 local NOMES_ARMAS_VISUAL = {
     [0]='Desarmado', [1]='Soco ingles', [2]='Taco de golfe', [3]='Cassetete',
     [4]='Faca', [5]='Taco', [6]='Pa', [7]='Taco de sinuca', [8]='Katana',
@@ -990,6 +991,44 @@ local NOMES_ARMAS_VISUAL = {
     [38]='Minigun', [41]='Spray', [42]='Extintor', [43]='Camera',
     [46]='Paraquedas'
 }
+
+local function obterStatusVisualMobile(id, ped)
+    local agora = relogioAtendimento()
+    local registro = visualStaffStatus[id] or {}
+    local vida, colete
+    if type(sampGetPlayerHealth) == 'function' then
+        local ok, valor = pcall(sampGetPlayerHealth, id)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then vida = valor end
+    end
+    if type(sampGetPlayerArmor) == 'function' then
+        local ok, valor = pcall(sampGetPlayerArmor, id)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then colete = valor end
+    end
+    if vida == nil and ped and type(getCharHealth) == 'function' then
+        local ok, valor = pcall(getCharHealth, ped)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then vida = valor end
+    end
+    if colete == nil and ped and type(getCharArmour) == 'function' then
+        local ok, valor = pcall(getCharArmour, ped)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then colete = valor end
+    end
+    if vida ~= nil then
+        registro.vida, registro.vidaEm = vida, agora
+    elseif registro.vida ~= nil and agora - (registro.vidaEm or 0) <= 2 then
+        vida = registro.vida
+    else vida = 0 end
+    if colete ~= nil then
+        registro.colete, registro.coleteEm = colete, agora
+    elseif registro.colete ~= nil and agora - (registro.coleteEm or 0) <= 2 then
+        colete = registro.colete
+    else colete = 0 end
+    visualStaffStatus[id] = registro
+    return math.max(0, math.floor(vida + 0.5)), math.max(0, math.floor(colete + 0.5))
+end
 
 local function desenharVisualStaff()
     if not staffLogada or not moduloAtivo('visual_staff') then return end
@@ -1129,17 +1168,7 @@ local function desenharVisualStaff()
                             -- Mesma fonte usada pelo Wall_Hack mobile validado:
                             -- ler diretamente pelo ID SA-MP, sem misturar com o
                             -- ped local nem sobrescrever por TextDraw.
-                            local vida, colete = 0, 0
-                            if type(sampGetPlayerHealth) == 'function' then
-                                local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
-                                if okVida then vida = tonumber(valorVida) or 0 end
-                            end
-                            if type(sampGetPlayerArmor) == 'function' then
-                                local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
-                                if okColete then colete = tonumber(valorColete) or 0 end
-                            end
-                            vida = math.max(0, math.floor(vida + 0.5))
-                            colete = math.max(0, math.floor(colete + 0.5))
+                            local vida, colete = obterStatusVisualMobile(item.id, ped)
                             -- Vida e colete usam apenas os dados sincronizados do
                             -- jogador. TextDraws podem ficar antigos e não devem
                             -- substituir esses valores. Capacete ainda depende do
