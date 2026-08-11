@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.12'
+local VERSION = '4.13'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1126,7 +1126,9 @@ local function desenharVisualStaff()
                         end
                     end
                     local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
-                    if sx and sy then
+                    local telaW, telaH = getScreenResolution()
+                    if sx and sy and sx >= 0 and sy >= 0
+                        and sx <= telaW and sy <= telaH then
                         if emVeiculo and assentoVisual ~= nil then
                             local coluna = assentoVisual == -1 and -1
                                 or ((assentoVisual % 2 == 0) and 1 or -1)
