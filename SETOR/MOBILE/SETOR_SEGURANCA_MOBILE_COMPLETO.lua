@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.09'
+local VERSION = '4.12'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1078,6 +1078,7 @@ local function desenharVisualStaff()
                 local distancia = math.sqrt(dx * dx + dy * dy + dz * dz)
                 if distancia <= 800 then
                     local emVeiculo = type(isCharInAnyCar) == 'function' and isCharInAnyCar(ped)
+                    local assentoVisual = nil
                     local pontoX, pontoY, pontoZ = x, y, z + 1.10
                     if emVeiculo then
                         local carro, assento = nil, nil
@@ -1102,6 +1103,7 @@ local function desenharVisualStaff()
                         end
                         if carro and assento ~= nil
                             and type(getOffsetFromCarInWorldCoords) == 'function' then
+                            assentoVisual = assento
                             local posicoes = {
                                 [-1]={-0.62, 0.28, 1.35}, [0]={0.62, 0.28, 1.35},
                                 [1]={-0.62, -0.62, 1.35}, [2]={0.62, -0.62, 1.35},
@@ -1125,14 +1127,22 @@ local function desenharVisualStaff()
                     end
                     local sx, sy = convert3DCoordsToScreen(pontoX, pontoY, pontoZ)
                     if sx and sy then
+                        if emVeiculo and assentoVisual ~= nil then
+                            local coluna = assentoVisual == -1 and -1
+                                or ((assentoVisual % 2 == 0) and 1 or -1)
+                            local fila = assentoVisual <= 0 and 0
+                                or (math.floor((assentoVisual - 1) / 2) + 1)
+                            sx = sx + coluna * 42
+                            sy = sy + fila * 26
+                        end
                         -- Certas DATAs devolvem a mesma matriz para todos os
                         -- passageiros. Se isso ocorrer, separa os nomes na tela.
                         if emVeiculo then
                             local deslocamento = 0
                             for _, posicao in ipairs(posicoesVeiculoNaTela) do
-                                if math.abs(sx - posicao.x) < 45
-                                    and math.abs((sy + deslocamento) - posicao.y) < 14 then
-                                    deslocamento = deslocamento - 16
+                                if math.abs(sx - posicao.x) < 90
+                                    and math.abs((sy + deslocamento) - posicao.y) < 24 then
+                                    deslocamento = deslocamento - 30
                                 end
                             end
                             sy = sy + deslocamento
@@ -1151,7 +1161,9 @@ local function desenharVisualStaff()
                             and cfg.modulos.visual_status ~= false
                         local mostrarArma = nivel >= 2 and not emVeiculo
                             and cfg.modulos.visual_arma ~= false
-                        local limiteInferior = emVeiculo and (sy - 57) or (sy - 60)
+                        -- Mantem o conjunto ancorado acima da cabeca em qualquer
+                        -- distancia, sem um deslocamento vertical fixo adicional.
+                        local limiteInferior = sy
                         local nomeY = limiteInferior
                             - (mostrarStatus and 14 or 0)
                             - (mostrarArma and 14 or 0)
@@ -1179,20 +1191,23 @@ local function desenharVisualStaff()
                                 -- Vida vermelha a esquerda e colete branco a direita.
                                 -- Acima de 100, a respectiva barra permanece cheia.
                                 local larguraBarra, alturaBarra, espaco = 38, 7, 5
-                                local total = larguraBarra * 2 + espaco
+                                local mostrarColete = colete > 0
+                                local total = mostrarColete
+                                    and (larguraBarra * 2 + espaco) or larguraBarra
                                 local inicioX = sx - total / 2
                                 local barraY = statusY + 4
                                 local vidaProporcao = math.min(1, vida / 100)
-                                local coleteProporcao = math.min(1, colete / 100)
                                 renderDrawBox(inicioX, barraY, larguraBarra, alturaBarra, 0xB0000000)
                                 if vidaProporcao > 0 then
                                     renderDrawBox(inicioX + 1, barraY + 1,
                                         (larguraBarra - 2) * vidaProporcao,
                                         alturaBarra - 2, 0xFFE74C3C)
                                 end
-                                local coleteX = inicioX + larguraBarra + espaco
-                                renderDrawBox(coleteX, barraY, larguraBarra, alturaBarra, 0xB0000000)
-                                if coleteProporcao > 0 then
+                                if mostrarColete then
+                                    local coleteX = inicioX + larguraBarra + espaco
+                                    local coleteProporcao = math.min(1, colete / 100)
+                                    renderDrawBox(coleteX, barraY,
+                                        larguraBarra, alturaBarra, 0xB0000000)
                                     renderDrawBox(coleteX + 1, barraY + 1,
                                         (larguraBarra - 2) * coleteProporcao,
                                         alturaBarra - 2, 0xFFFFFFFF)
