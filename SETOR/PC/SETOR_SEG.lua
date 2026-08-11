@@ -1479,7 +1479,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.85")
+script_version("2.86")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -4056,7 +4056,8 @@ function _G.HZDesenharVisualStaffPc()
             -- O handle e consultado novamente em cada quadro. O SA-MP pode
             -- substituir o personagem remoto ao entrar/sair de um veiculo.
             local existe, ped = sampGetCharHandleBySampPlayerId(item.id)
-            if existe and ped and ped ~= PLAYER_PED then
+            if existe and ped and ped ~= PLAYER_PED
+                and (type(isCharOnScreen) ~= "function" or isCharOnScreen(ped)) then
                 local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
                 if math.sqrt(dx * dx + dy * dy + dz * dz) <= 800 then
@@ -7183,7 +7184,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.85",
+    versao = "2.86",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
