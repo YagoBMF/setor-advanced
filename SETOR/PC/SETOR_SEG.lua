@@ -1479,7 +1479,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.82")
+script_version("2.85")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -4059,7 +4059,7 @@ function _G.HZDesenharVisualStaffPc()
             if existe and ped and ped ~= PLAYER_PED then
                 local x, y, z = getCharCoordinates(ped)
                 local dx, dy, dz = x - px, y - py, z - pz
-                if math.sqrt(dx * dx + dy * dy + dz * dz) <= 1000 then
+                if math.sqrt(dx * dx + dy * dy + dz * dz) <= 800 then
                     -- Usa a posicao real do ped, como o wall de referencia.
                     -- Isso evita juntar todos os ocupantes no centro do veiculo.
                     local sx, sy = convert3DCoordsToScreen(x, y, z + 1.10)
@@ -4094,15 +4094,15 @@ function _G.HZDesenharVisualStaffPc()
                                     local modelo = type(getCarModel) == "function"
                                         and tonumber(getCarModel(carro)) or 0
                                     if _G.HZModelosMotoVisualPc[modelo] then
-                                        sx = sx + (assento == -1 and -30 or 30)
-                                        sy = sy + (assento == -1 and 0 or 12)
+                                        sx = sx + (assento == -1 and -42 or 42)
+                                        sy = sy + (assento == -1 and 0 or 24)
                                     else
                                         local coluna = assento == -1 and -1
                                             or ((assento % 2 == 0) and 1 or -1)
                                         local fila = assento <= 0 and 0
                                             or (math.floor((assento - 1) / 2) + 1)
-                                        sx = sx + coluna * 46
-                                        sy = sy + fila * 15
+                                        sx = sx + coluna * 72
+                                        sy = sy + fila * 34
                                     end
                                 end
                             end
@@ -4120,7 +4120,9 @@ function _G.HZDesenharVisualStaffPc()
                             and configSistema.modulos.visual_status ~= false
                         local mostrarArma = nivel >= 2 and not emVeiculo
                             and configSistema.modulos.visual_arma ~= false
-                        local limiteInferior = sy - 73
+                        -- A projecao 3D ja esta ancorada acima da cabeca.
+                        -- Nao adiciona afastamento vertical fixo por distancia.
+                        local limiteInferior = sy
                         local nomeY = limiteInferior
                             - (mostrarStatus and 14 or 0)
                             - (mostrarArma and 14 or 0)
@@ -4143,24 +4145,32 @@ function _G.HZDesenharVisualStaffPc()
                             -- real (por exemplo, mostrar 100 quando o jogador tem 75).
                             -- Capacete continua vindo do TextDraw porque não existe
                             -- esse campo na estrutura padrão do SA-MP.
-                            local ehTelado = tonumber(item.id) == tonumber(idTelado)
                             local armaId = type(getCurrentCharWeapon) == "function"
                                 and tonumber(getCurrentCharWeapon(ped)) or 0
-                            if mostrarStatus then
-                                local vidaTexto = (not ehTelado and vida >= 100)
-                                    and "+100%"
-                                    or (tostring(math.min(250, vida)) .. "%")
-                                local coleteTexto = tostring(math.min(250, colete)) .. "%"
-                                local larguraVida =
-                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, vidaTexto)
-                                local larguraColete =
-                                    renderGetFontDrawTextLength(_G.HZVisualStaffFontePc, coleteTexto)
-                                local larguraTotal = larguraVida + 8 + larguraColete
-                                local inicio = sx - larguraTotal / 2
-                                renderFontDrawText(_G.HZVisualStaffFontePc, vidaTexto,
-                                    inicio, statusY, 0xFFE74C3C)
-                                renderFontDrawText(_G.HZVisualStaffFontePc, coleteTexto,
-                                    inicio + larguraVida + 8, statusY, 0xFFFFFFFF)
+                            if mostrarStatus and type(renderDrawBox) == "function" then
+                                local larguraBarra, alturaBarra, espaco = 38, 7, 5
+                                local mostrarColete = colete > 0
+                                local total = mostrarColete
+                                    and (larguraBarra * 2 + espaco) or larguraBarra
+                                local inicioX = sx - total / 2
+                                local barraY = statusY + 4
+                                local vidaProporcao = math.min(1, vida / 100)
+                                renderDrawBox(inicioX, barraY,
+                                    larguraBarra, alturaBarra, 0xB0000000)
+                                if vidaProporcao > 0 then
+                                    renderDrawBox(inicioX + 1, barraY + 1,
+                                        (larguraBarra - 2) * vidaProporcao,
+                                        alturaBarra - 2, 0xFFE74C3C)
+                                end
+                                if mostrarColete then
+                                    local coleteX = inicioX + larguraBarra + espaco
+                                    local coleteProporcao = math.min(1, colete / 100)
+                                    renderDrawBox(coleteX, barraY,
+                                        larguraBarra, alturaBarra, 0xB0000000)
+                                    renderDrawBox(coleteX + 1, barraY + 1,
+                                        (larguraBarra - 2) * coleteProporcao,
+                                        alturaBarra - 2, 0xFFFFFFFF)
+                                end
                             end
                             if mostrarArma then
                                 local armaTexto = (tonumber(statsTd.id) == tonumber(item.id)
@@ -7173,7 +7183,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.82",
+    versao = "2.85",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
