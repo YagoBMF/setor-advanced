@@ -1479,7 +1479,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.81")
+script_version("2.82")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -3958,6 +3958,7 @@ _G.HZVisualStaffProximaVarreduraPc = _G.HZVisualStaffProximaVarreduraPc or 0
 _G.HZVisualStaffErroAvisadoPc = _G.HZVisualStaffErroAvisadoPc or false
 _G.HZVisualStaffBloqueadoAtePc = _G.HZVisualStaffBloqueadoAtePc or 0
 _G.HZVisualStaffErrosPc = _G.HZVisualStaffErrosPc or 0
+_G.HZVisualStaffStatusPc = _G.HZVisualStaffStatusPc or {}
 _G.HZNomesArmasVisualPc = _G.HZNomesArmasVisualPc or {
     [0]="Desarmado", [1]="Soco ingles", [2]="Taco de golfe", [3]="Cassetete",
     [4]="Faca", [5]="Taco", [6]="Pa", [7]="Taco de sinuca", [8]="Katana",
@@ -3975,6 +3976,44 @@ _G.HZModelosMotoVisualPc = _G.HZModelosMotoVisualPc or {
     [471]=true,[481]=true,[509]=true,[510]=true,[521]=true,
     [522]=true,[523]=true,[581]=true,[586]=true
 }
+
+local function obterStatusVisualPc(id, ped)
+    local agora = os.clock and os.clock() or 0
+    local registro = _G.HZVisualStaffStatusPc[id] or {}
+    local vida, colete
+    if type(sampGetPlayerHealth) == "function" then
+        local ok, valor = pcall(sampGetPlayerHealth, id)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then vida = valor end
+    end
+    if type(sampGetPlayerArmor) == "function" then
+        local ok, valor = pcall(sampGetPlayerArmor, id)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then colete = valor end
+    end
+    if vida == nil and ped and type(getCharHealth) == "function" then
+        local ok, valor = pcall(getCharHealth, ped)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then vida = valor end
+    end
+    if colete == nil and ped and type(getCharArmour) == "function" then
+        local ok, valor = pcall(getCharArmour, ped)
+        valor = ok and tonumber(valor) or nil
+        if valor and valor >= 0 and valor <= 10000 then colete = valor end
+    end
+    if vida ~= nil then
+        registro.vida, registro.vidaEm = vida, agora
+    elseif registro.vida ~= nil and agora - (registro.vidaEm or 0) <= 2 then
+        vida = registro.vida
+    else vida = 0 end
+    if colete ~= nil then
+        registro.colete, registro.coleteEm = colete, agora
+    elseif registro.colete ~= nil and agora - (registro.coleteEm or 0) <= 2 then
+        colete = registro.colete
+    else colete = 0 end
+    _G.HZVisualStaffStatusPc[id] = registro
+    return math.max(0, math.floor(vida + 0.5)), math.max(0, math.floor(colete + 0.5))
+end
 
 function _G.HZDesenharVisualStaffPc()
     if not _G.HZModuloAtivo("visual_staff") then return end
@@ -4097,17 +4136,7 @@ function _G.HZDesenharVisualStaffPc()
                             -- Vida e colete devem vir do jogador remoto no SA-MP.
                             -- getCharHealth/getCharArmour podem retornar limites
                             -- internos do modelo (como 250) em vez do estado real.
-                            local vida, colete = 0, 0
-                            if type(sampGetPlayerHealth) == "function" then
-                                local okVida, valorVida = pcall(sampGetPlayerHealth, item.id)
-                                if okVida then vida = tonumber(valorVida) or 0 end
-                            end
-                            if type(sampGetPlayerArmor) == "function" then
-                                local okColete, valorColete = pcall(sampGetPlayerArmor, item.id)
-                                if okColete then colete = tonumber(valorColete) or 0 end
-                            end
-                            vida = math.max(0, math.floor(vida + 0.5))
-                            colete = math.max(0, math.floor(colete + 0.5))
+                            local vida, colete = obterStatusVisualPc(item.id, ped)
                             -- Vida e colete devem vir exclusivamente da estrutura
                             -- sincronizada do jogador. O TextDraw do servidor pode
                             -- permanecer com valores antigos e sobrescrever o valor
@@ -7144,7 +7173,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.79",
+    versao = "2.82",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
