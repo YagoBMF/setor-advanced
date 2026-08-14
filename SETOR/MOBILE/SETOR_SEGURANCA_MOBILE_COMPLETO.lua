@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.13'
+local VERSION = '4.14'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -2814,8 +2814,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
                     local rgNick = tostring(dialogAction.rg)
                     lua_thread.create(function()
                         sampSendChat('/kick ' .. rgNick .. ' Nick improprio')
-                        wait(1000)
+                        wait(500)
                         sampSendChat('/ban ' .. rgNick .. ' Nick improprio')
+                        wait(500)
+                        sampSendChat('/lc 1')
                     end)
                 else
                     sampSendChat('/ban ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
