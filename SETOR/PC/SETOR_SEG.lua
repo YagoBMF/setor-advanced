@@ -1481,7 +1481,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.88")
+script_version("2.89")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -3716,21 +3716,6 @@ local WM_KEYUP_SELETOR = 0x0101
 local WM_SYSKEYUP_SELETOR = 0x0105
 
 local function setor_onWindowMessage(msg, wparam, lparam)
-    -- Ao usar Alt+Tab, libera imediatamente o cursor nativo do SA-MP.
-    -- Sem isso, algumas DATAs mantem o cursor preso ao retangulo do GTA
-    -- mesmo quando outro programa ja recebeu o foco.
-    if msg == 0x0008
-        or (msg == 0x001C and tonumber(wparam) == 0) then
-        if type(sampToggleCursor) == "function" then
-            pcall(sampToggleCursor, false)
-        end
-        setCursor(false)
-        _G.HZPainelCursorNativo = false
-        _G.HZPainelCampoFoco = nil
-        _G.HZPainelCampoFocoFrames = 0
-        return
-    end
-
     local ehKeyDown = (msg == WM_KEYDOWN_SELETOR or msg == WM_SYSKEYDOWN_SELETOR)
     local ehKeyUp = (msg == WM_KEYUP_SELETOR or msg == WM_SYSKEYUP_SELETOR)
 
@@ -7201,7 +7186,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.88",
+    versao = "2.89",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
