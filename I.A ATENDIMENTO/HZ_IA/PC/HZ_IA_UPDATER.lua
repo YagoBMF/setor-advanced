@@ -1,10 +1,10 @@
 script_name('HZ IA Updater')
 script_author('Respected')
-script_version('1.0.0')
+script_version('1.0.1')
 require 'lib.moonloader'
 
 local requests = require 'requests'
-local ROOT = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/HZ_IA/PC/'
+local ROOT = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/I.A%20ATENDIMENTO/HZ_IA/PC/'
 local VERSION_URL = ROOT .. 'versao.txt'
 local SCRIPT_URL = ROOT .. 'HZ_ATENDIMENTO_IA.lua'
 local SCRIPT_PATH = getWorkingDirectory() .. '\\HZ_ATENDIMENTO_IA.lua'
