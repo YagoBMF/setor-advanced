@@ -1,6 +1,6 @@
 script_name('HZ Atendimento IA')
 script_author('HZ')
-script_version('1.1.1')
+script_version('1.2.0')
 
 require 'moonloader'
 local sampev = require 'lib.samp.events'
@@ -230,6 +230,7 @@ local function send_question(item)
     if item.type == 'support_staff_message' then url = url .. '&message=' .. urlencode(item.message) .. '&role=' .. urlencode(item.role) end
     if item.type == 'teach' then url = url .. '&question=' .. urlencode(item.question) .. '&answer=' .. urlencode(item.answer) end
     if item.type == 'memory_feedback' then url = url .. '&question=' .. urlencode(item.question) .. '&answer=' .. urlencode(item.answer) .. '&action=' .. urlencode(item.action or 'approved') end
+    if item.scope then url = url .. '&scope=' .. urlencode(item.scope) end
     url = url .. '&t=' .. tostring(os.time())
     download_item = table.remove(incoming, 1)
     begin_download('question', url)
@@ -371,8 +372,8 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
             if active_dialog.type == 'question' then sampSendChat('/d ' .. active_dialog.rg .. ' ' .. answer) else sampSendChat(answer) end
             if active_dialog.type == 'question' then table.insert(incoming, {type = 'resolve_question', player = active_dialog.player, rg = active_dialog.rg, question = active_dialog.question, action = 'approved'}) end
             if active_dialog.type == 'support_message' then
-                table.insert(incoming, {type = 'memory_feedback', player = active_dialog.player, question = active_dialog.message, answer = answer, action = 'approved'})
-                sampAddChatMessage('[HZ IA] Atendimento enviado para a memoria pendente.', 0x62E6A7)
+                table.insert(incoming, {type = 'memory_feedback', scope = 'support', player = active_dialog.player, rg = active_dialog.rg or support_target_rg or '', question = active_dialog.message, answer = answer, action = 'approved'})
+                sampAddChatMessage('[HZ IA] Caso completo enviado para a memoria pendente.', 0x62E6A7)
             end
             active_dialog = nil
             active_dialog_since = 0
@@ -422,7 +423,7 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
             if answer and #answer > 0 then
                 local original = active_dialog.question or active_dialog.message
                 if active_dialog.type == 'question' then sampSendChat('/d ' .. active_dialog.rg .. ' ' .. answer) else sampSendChat(answer) end
-                table.insert(incoming, {type = 'teach', player = active_dialog.player, rg = active_dialog.rg or '', question = original, answer = answer})
+                table.insert(incoming, {type = 'teach', scope = active_dialog.type == 'support_message' and 'support' or 'question', player = active_dialog.player, rg = active_dialog.rg or support_target_rg or '', question = original, answer = answer})
                 sampAddChatMessage('[HZ IA] Correcao salva e enviada.', 0x62E6A7)
             end
         end
