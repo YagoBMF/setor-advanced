@@ -1073,26 +1073,16 @@ local function paineltv_OnDrawFrame()
     elseif menuAtual:find("lista_") then
         imgui.TextColored(C_LINE, u8(labelPunicao))
         imgui.TextColored(C_MUTED, comandoBase == "/mutevoip"
-            and u8"Defina o tempo da restricao" or u8"Informe ou selecione o motivo")
+            and u8"Confira o motivo fixo" or u8"Informe ou selecione o motivo")
         imgui.Separator()
         if comandoBase == "/mutevoip" then
             motivoSel = "USO INDEVIDO DO VOIP"
             imgui.TextColored(C_MUTED, u8"MOTIVO FIXO")
             imgui.TextColored(C_TEXT, u8(motivoSel))
             imgui.Spacing()
-            imgui.TextColored(C_MUTED, u8"Tempo (Dias)")
-            imgui.PushItemWidth(-1)
-            imgui.InputInt("##tempo_voip", tempoPunicao)
-            manterFocoCampoPainel("tempo_voip")
-            imgui.PopItemWidth()
-
             if hzButton(u8"PROSSEGUIR", imgui.ImVec2(-1, H_BTN_MAIN), C_PRIMARY, C_HOVER, C_ACTIVE) then
-                if (tonumber(tempoPunicao.v) or 0) <= 0 then
-                    sampAddChatMessage("{FF5555}[SETOR]: Informe os dias do Mute VOIP.", -1)
-                else
-                    menuAtual = "confirmar"
-                    aguardandoConfirmBanPerm = false
-                end
+                menuAtual = "confirmar"
+                aguardandoConfirmBanPerm = false
             end
             if hzButton(u8"DESMUTAR", V(-1, 30), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
                 if podeExecutarAcao() then
@@ -1193,7 +1183,7 @@ local function paineltv_OnDrawFrame()
         if comandoBase == "/punicao" and levelConfirmacao and levelConfirmacao >= 0 and levelConfirmacao <= 30 then
             imgui.TextColored(C_WARN, u8("REGRA NOVATO LEVEL 0-30 APLICADA"))
         end
-        if comandoBase ~= "/kick" then
+        if comandoBase ~= "/kick" and comandoBase ~= "/mutevoip" then
             local txt = (comandoBase == "/ban" or comandoBase == "/mute" or comandoBase == "/mutevoip") and u8"DIAS" or u8"TEMPO"
             imgui.InputInt(txt, tempoPunicao)
             manterFocoCampoPainel("tempo_confirmacao")
@@ -1222,6 +1212,8 @@ local function paineltv_OnDrawFrame()
                         else
                             sampSendChat("/bantemp " .. rgTelado .. " " .. tempoPunicao.v .. " " .. motivoSel)
                         end
+                    elseif comandoBase == "/mutevoip" then
+                        sampSendChat("/mutevoip " .. rgTelado .. " " .. motivoSel)
                     else
                         sampSendChat(comandoBase .. " " .. rgTelado .. " " .. tempoPunicao.v .. " " .. motivoSel)
                     end
@@ -1553,7 +1545,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.90")
+script_version("2.91")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -7258,7 +7250,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.90",
+    versao = "2.91",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
