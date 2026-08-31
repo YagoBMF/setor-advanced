@@ -202,6 +202,9 @@ local D_SELETOR_TV = 28020
 local D_MOD_CATEGORIA = 28021
 local D_SELETOR_COMANDO = 28023
 local D_COMANDOS = 28025
+_G.HZMobileDialogVoip = 28026
+_G.HZMobileDialogVoipTempo = 28027
+_G.HZMobileScanChat = _G.HZMobileScanChat or {aguardandoAte=0, ultimoId=nil}
 local D_AUTO_LISTA = 28100
 local D_AUTO_CRIAR_COMANDO = 28101
 local D_AUTO_CRIAR_TEMPO = 28102
@@ -2054,8 +2057,24 @@ end
 local function abrirPunicoes()
     if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     dialogo(D_PUNICOES, 'SETOR - PUNICOES',
-        'Tabela de cadeia\nTabela de ban permanente\nTabela de ban temporario\nTabela de mute\nTabela de kick',
+        'Tabela de cadeia\nTabela de ban permanente\nTabela de ban temporario\nTabela de mute\nVOIP\nTabela de kick',
         'Continuar', 'Voltar', 2)
+end
+
+function _G.HZAbrirVoipMobile()
+    dialogo(_G.HZMobileDialogVoip, 'SETOR - VOIP',
+        'MUTAR\nDESMUTAR', 'Selecionar', 'Voltar', 2)
+end
+
+function _G.HZMobileSolicitarScanNoChat()
+    local id = select(1, dadosJogadorAtual())
+    id = tonumber(id)
+    if not id or id < 0 then return false end
+    if tonumber(_G.HZMobileScanChat.ultimoId) == id then return false end
+    _G.HZMobileScanChat.ultimoId = id
+    _G.HZMobileScanChat.aguardandoAte = (os.clock and os.clock() or 0) + 5
+    sampSendChat('/scan ' .. tostring(id))
+    return true
 end
 
 local function abrirTabelaPunicoes(tipo)
@@ -2618,6 +2637,31 @@ end
 
 function samp.onShowDialog(dialogId, style, title, button1, button2, text)
     local agora = os.clock and os.clock() or 0
+    local scanAte = tonumber(_G.HZMobileScanChat and _G.HZMobileScanChat.aguardandoAte) or 0
+    local tituloPossivelScan = clean(title):lower()
+    local textoPossivelScan = clean(text):lower()
+    local ehDialogScan = tituloPossivelScan:find('scan', 1, true)
+        or (tituloPossivelScan:find('informa', 1, true)
+            and tituloPossivelScan:find('jogador', 1, true)
+            and not textoPossivelScan:find('reportador', 1, true))
+    if scanAte > 0 and agora <= scanAte and ehDialogScan then
+        _G.HZMobileScanChat.aguardandoAte = 0
+        local tituloScan = clean(title)
+        sampAddChatMessage('{48C6FF}[SCAN] ' .. (tituloScan ~= '' and tituloScan or 'Informacoes do jogador'), -1)
+        local adicionou = false
+        for linha in (tostring(text or '') .. '\n'):gmatch('(.-)\n') do
+            linha = clean(linha):gsub('\t', '  ')
+            linha = trim(linha)
+            if linha ~= '' then
+                sampAddChatMessage('{FFFFFF}' .. linha, -1)
+                adicionou = true
+            end
+        end
+        if not adicionou then sampAddChatMessage('{FFB347}[SCAN] Sem detalhes retornados.', -1) end
+        return false
+    elseif scanAte > 0 and agora > scanAte then
+        _G.HZMobileScanChat.aguardandoAte = 0
+    end
     local tituloLimpo = clean(title):lower()
     local ehListaReports = tituloLimpo:find('report', 1, true)
         or tituloLimpo:find('denuncia', 1, true)
@@ -2656,7 +2700,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
     -- Usa o ID literal aqui para nao consumir mais um upvalue no callback,
     -- que ja fica proximo do limite de 60 do LuaJIT/MonetLoader.
-    if dialogId < D_MAIN or dialogId > 28025 then return end
+    if dialogId < D_MAIN or dialogId > 28027 then return end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
@@ -2688,6 +2732,14 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         end
         if dialogId == D_PUNICOES then
             lua_thread.create(function() wait(150) abrirPrincipal() end)
+            return false
+        end
+        if dialogId == _G.HZMobileDialogVoip then
+            lua_thread.create(function() wait(150) abrirPunicoes() end)
+            return false
+        end
+        if dialogId == _G.HZMobileDialogVoipTempo then
+            lua_thread.create(function() wait(150) _G.HZAbrirVoipMobile() end)
             return false
         end
         if dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
@@ -2779,9 +2831,32 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             end)
         end
     elseif dialogId == D_PUNICOES then
-        local tiposTabela = {'cadeia', 'ban_permanente', 'ban_temporario', 'mute', 'kick'}
+        local tiposTabela = {'cadeia', 'ban_permanente', 'ban_temporario', 'mute', 'voip', 'kick'}
         local tipoTabela = tiposTabela[listboxId + 1]
-        if tipoTabela then abrirTabelaPunicoes(tipoTabela) end
+        if tipoTabela == 'voip' then _G.HZAbrirVoipMobile()
+        elseif tipoTabela then abrirTabelaPunicoes(tipoTabela) end
+    elseif dialogId == _G.HZMobileDialogVoip then
+        if not rgAtual or not tostring(rgAtual):match('^%d+$') then
+            chat('{FFFF00}', 'Aguarde o RG do jogador telado aparecer.')
+            return false
+        end
+        if listboxId == 0 then
+            dialogo(_G.HZMobileDialogVoipTempo, 'SETOR - VOIP',
+                'Alvo: ' .. tostring(nickAtual or '?') .. ' | RG ' .. tostring(rgAtual)
+                    .. '\nMotivo: USO INDEVIDO DO VOIP\n\nDigite somente o tempo em dias:',
+                'PROSSEGUIR', 'Voltar', 1)
+        elseif listboxId == 1 then
+            sampSendChat('/desmutevoip ' .. tostring(rgAtual))
+        end
+    elseif dialogId == _G.HZMobileDialogVoipTempo then
+        local dias = math.floor(tonumber(trim(input)) or 0)
+        if dias <= 0 then
+            chat('{FF5555}', 'Informe um tempo valido em dias.')
+            lua_thread.create(function() wait(150); _G.HZAbrirVoipMobile() end)
+        elseif rgAtual and tostring(rgAtual):match('^%d+$') then
+            sampSendChat('/mutevoip ' .. tostring(rgAtual) .. ' ' .. tostring(dias)
+                .. ' USO INDEVIDO DO VOIP')
+        end
     elseif dialogId == D_TABELA_PUNICAO then
         punicaoTabelaSelecionada = (_G.HZMobileListaTabelaPunicao or {})[listboxId + 1]
         if punicaoTabelaSelecionada then
@@ -2975,6 +3050,8 @@ function samp.onSendCommand(command)
         reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
     elseif cmdLimpo == '/tvoff' then
         painelTvFlutuante, rgAtual, nickAtual, levelAtualConfirmado = false, nil, nil, nil
+        _G.HZMobileScanChat.ultimoId = nil
+        _G.HZMobileScanChat.aguardandoAte = 0
     end
     if cmdLimpo == '/fa' then
         if emAtendimento then
@@ -3126,6 +3203,12 @@ function samp.onServerMessage(color, text)
                 painelTvFlutuante = true
                 enviarAvisoTelagemReport(nickAtual, rgAtual)
             end
+            if painelTvFlutuante and (aguardandoReport or mesmoAlvo) then
+                lua_thread.create(function()
+                    wait(350)
+                    _G.HZMobileSolicitarScanNoChat()
+                end)
+            end
         end
     end
     local tvNick, tvRg = ct:match('[Tt]elando.-([%w_]+).-RG[:%s]+(%d+)')
@@ -3138,6 +3221,10 @@ function samp.onServerMessage(color, text)
             salvarRG(tvRg, tvNickOnline); rgAtual, nickAtual = tvRg, tvNickOnline
             painelTvFlutuante = true
             enviarAvisoTelagemReport(tvNickOnline, tvRg)
+            lua_thread.create(function()
+                wait(350)
+                _G.HZMobileSolicitarScanNoChat()
+            end)
         end
     end
 
