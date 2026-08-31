@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.15'
+local VERSION = '4.16'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -203,7 +203,6 @@ local D_MOD_CATEGORIA = 28021
 local D_SELETOR_COMANDO = 28023
 local D_COMANDOS = 28025
 _G.HZMobileDialogVoip = 28026
-_G.HZMobileDialogVoipTempo = 28027
 _G.HZMobileScanChat = _G.HZMobileScanChat or {aguardandoAte=0, ultimoId=nil}
 local D_AUTO_LISTA = 28100
 local D_AUTO_CRIAR_COMANDO = 28101
@@ -2700,7 +2699,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
     -- Usa o ID literal aqui para nao consumir mais um upvalue no callback,
     -- que ja fica proximo do limite de 60 do LuaJIT/MonetLoader.
-    if dialogId < D_MAIN or dialogId > 28027 then return end
+    if dialogId < D_MAIN or dialogId > 28026 then return end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
@@ -2736,10 +2735,6 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         end
         if dialogId == _G.HZMobileDialogVoip then
             lua_thread.create(function() wait(150) abrirPunicoes() end)
-            return false
-        end
-        if dialogId == _G.HZMobileDialogVoipTempo then
-            lua_thread.create(function() wait(150) _G.HZAbrirVoipMobile() end)
             return false
         end
         if dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
@@ -2841,21 +2836,9 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             return false
         end
         if listboxId == 0 then
-            dialogo(_G.HZMobileDialogVoipTempo, 'SETOR - VOIP',
-                'Alvo: ' .. tostring(nickAtual or '?') .. ' | RG ' .. tostring(rgAtual)
-                    .. '\nMotivo: USO INDEVIDO DO VOIP\n\nDigite somente o tempo em dias:',
-                'PROSSEGUIR', 'Voltar', 1)
+            sampSendChat('/mutevoip ' .. tostring(rgAtual) .. ' USO INDEVIDO DO VOIP')
         elseif listboxId == 1 then
             sampSendChat('/desmutevoip ' .. tostring(rgAtual))
-        end
-    elseif dialogId == _G.HZMobileDialogVoipTempo then
-        local dias = math.floor(tonumber(trim(input)) or 0)
-        if dias <= 0 then
-            chat('{FF5555}', 'Informe um tempo valido em dias.')
-            lua_thread.create(function() wait(150); _G.HZAbrirVoipMobile() end)
-        elseif rgAtual and tostring(rgAtual):match('^%d+$') then
-            sampSendChat('/mutevoip ' .. tostring(rgAtual) .. ' ' .. tostring(dias)
-                .. ' USO INDEVIDO DO VOIP')
         end
     elseif dialogId == D_TABELA_PUNICAO then
         punicaoTabelaSelecionada = (_G.HZMobileListaTabelaPunicao or {})[listboxId + 1]
