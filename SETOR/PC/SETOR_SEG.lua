@@ -7258,7 +7258,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.89",
+    versao = "2.90",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
