@@ -99,6 +99,18 @@ local modoConfigurado = true
 
 local idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
 local ultimoIdTelado = "---"
+local ultimoScanAutomaticoChave = nil
+_G.HZScanChat = _G.HZScanChat or { aguardandoAte = 0 }
+
+function _G.HZSolicitarScanNoChat(id)
+    id = tostring(id or "")
+    if not id:match("^%d+$") then return false end
+    -- O retorno de /scan chega em um dialogo do servidor. Durante esta curta
+    -- janela, o callback converte esse dialogo em linhas do chat e o oculta.
+    _G.HZScanChat.aguardandoAte = (os.clock and os.clock() or 0) + 5
+    sampSendChat("/scan " .. id)
+    return true
+end
 
 -- Avisos /AC isolados em estado global para evitar exceder limites locais do Lua 5.1.
 _G.HZAvisosAC = _G.HZAvisosAC or {
@@ -729,13 +741,22 @@ local function paineltv_OnDrawFrame()
     local function fitWindowHeight()
         if menuAtual == "principal" then
             local extraCompacto = painelTvEscala <= 0.81 and 26 or 0
-            if _G.HZMonitorEtapa1 and _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then return 505 + extraCompacto end
-            return 430 + extraCompacto
+            -- A altura acompanha a quantidade real de acoes rapidas. Assim,
+            -- novos botoes ampliam o painel em vez de cortar o conteudo.
+            local quantidadeAcoesRapidas = 4 -- Punicao, Armas, Checar e Scan
+            local alturaAcoesExtras = math.max(0, quantidadeAcoesRapidas - 3) * 41
+            if _G.HZMonitorEtapa1 and _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then
+                return 505 + alturaAcoesExtras + extraCompacto
+            end
+            return 430 + alturaAcoesExtras + extraCompacto
         end
         -- A configuracao ganhou a secao de tamanho; reserva espaco para o
         -- botao VOLTAR sem depender da escala escolhida.
         if menuAtual == "config" then return 425 end
-        if menuAtual == "categorias" then return 295 end
+        if menuAtual == "categorias" then
+            local quantidadeCategorias = 5 -- Cadeia, Ban, Mute, VOIP e Kick
+            return 295 + math.max(0, quantidadeCategorias - 4) * 39
+        end
         if menuAtual == "confirmar" then return 355 end
         if tostring(menuAtual):find("lista_") then return 330 end
         return alturaJanela
@@ -969,6 +990,9 @@ local function paineltv_OnDrawFrame()
         if hzButton(u8"CHECAR JOGADOR", V(-1, 36), C_PRIMARY, C_HOVER, C_ACTIVE) then
             if podeExecutarAcao() then sampSendChat("/checar " .. rgTelado) end
         end
+        if hzButton(u8"SCAN JOGADOR", V(-1, 36), C_BLUE, C_BLUE_H, C_BLUE) then
+            if podeExecutarAcao() then _G.HZSolicitarScanNoChat(idTelado) end
+        end
         -- Monitoramento discreto por caixa de selecao.
         if _G.HZMonitorEtapa1 then
             _G.HZMonitorEtapa1.prepararCheckbox(rgTelado, nickTelado)
@@ -1027,6 +1051,7 @@ local function paineltv_OnDrawFrame()
             {"CADEIA", "lista_cadeia", "/punicao", "CADEIA"},
             {"BANIMENTO", "lista_ban", "/ban", "BANIMENTO"},
             {"MUTE", "lista_mute", "/mute", "MUTE"},
+            {"VOIP", "lista_mutevoip", "/mutevoip", "VOIP"},
             {"KICK", "lista_kick", "/kick", "KICK"}
         }
         for _, c in ipairs(cats) do
@@ -1047,9 +1072,35 @@ local function paineltv_OnDrawFrame()
 
     elseif menuAtual:find("lista_") then
         imgui.TextColored(C_LINE, u8(labelPunicao))
-        imgui.TextColored(C_MUTED, u8"Informe ou selecione o motivo")
+        imgui.TextColored(C_MUTED, comandoBase == "/mutevoip"
+            and u8"Defina o tempo da restricao" or u8"Informe ou selecione o motivo")
         imgui.Separator()
-        if modoPainel == 1 then
+        if comandoBase == "/mutevoip" then
+            motivoSel = "USO INDEVIDO DO VOIP"
+            imgui.TextColored(C_MUTED, u8"MOTIVO FIXO")
+            imgui.TextColored(C_TEXT, u8(motivoSel))
+            imgui.Spacing()
+            imgui.TextColored(C_MUTED, u8"Tempo (Dias)")
+            imgui.PushItemWidth(-1)
+            imgui.InputInt("##tempo_voip", tempoPunicao)
+            manterFocoCampoPainel("tempo_voip")
+            imgui.PopItemWidth()
+
+            if hzButton(u8"PROSSEGUIR", imgui.ImVec2(-1, H_BTN_MAIN), C_PRIMARY, C_HOVER, C_ACTIVE) then
+                if (tonumber(tempoPunicao.v) or 0) <= 0 then
+                    sampAddChatMessage("{FF5555}[SETOR]: Informe os dias do Mute VOIP.", -1)
+                else
+                    menuAtual = "confirmar"
+                    aguardandoConfirmBanPerm = false
+                end
+            end
+            if hzButton(u8"DESMUTAR", V(-1, 30), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+                if podeExecutarAcao() then
+                    sampSendChat("/desmutevoip " .. rgTelado)
+                    menuAtual = "principal"
+                end
+            end
+        elseif modoPainel == 1 then
             imgui.PushItemWidth(-1)
             imgui.InputText(u8"Pesquisar", pesquisa)
             manterFocoCampoPainel("pesquisa")
@@ -1131,7 +1182,7 @@ local function paineltv_OnDrawFrame()
         imgui.TextColored(C_MUTED, u8"Confira antes de aplicar")
         imgui.Separator()
         imgui.BeginChild("##hz_confirm", V(0, 136), true)
-        if comandoBase == "/mute" then
+        if comandoBase == "/mute" or comandoBase == "/mutevoip" then
             imgui.TextColored(C_MUTED, u8("RG: " .. rgTelado .. "   |   ID: " .. idTelado))
         else
             imgui.TextColored(C_MUTED, u8("NICK: " .. nickTelado))
@@ -1143,7 +1194,7 @@ local function paineltv_OnDrawFrame()
             imgui.TextColored(C_WARN, u8("REGRA NOVATO LEVEL 0-30 APLICADA"))
         end
         if comandoBase ~= "/kick" then
-            local txt = (comandoBase == "/ban" or comandoBase == "/mute") and u8"DIAS" or u8"TEMPO"
+            local txt = (comandoBase == "/ban" or comandoBase == "/mute" or comandoBase == "/mutevoip") and u8"DIAS" or u8"TEMPO"
             imgui.InputInt(txt, tempoPunicao)
             manterFocoCampoPainel("tempo_confirmacao")
         end
@@ -1269,6 +1320,10 @@ local function paineltv_parse_info(text)
 
         -- Aplicar configs ao trocar telado
         if trocouTelado then
+            -- Impede que o ID novo seja combinado com o RG residual do alvo
+            -- anterior enquanto os textdraws ainda estao sendo atualizados.
+            if not r then rgTelado = "---" end
+            ultimoScanAutomaticoChave = nil
             -- Descarta os dados exatos do alvo anterior. As linhas VIDA,
             -- COLETE e CAPACETE do novo painel preencherão esta estrutura.
             _G.HZVisualTextdrawAtual = {
@@ -1298,6 +1353,22 @@ local function paineltv_parse_info(text)
 
         if trocouTelado and _G.HZAvisosAC then
             _G.HZAvisosAC.confirmarReport(nickTelado, novoId)
+        end
+    end
+
+    -- /scan usa o ID: nao espera o RG aparecer nos textdraws. A chave evita
+    -- repeticao causada pelos varios callbacks recebidos para o mesmo alvo.
+    local idScan = tostring(idTelado or "")
+    if idScan:match("^%d+$") then
+        local chaveScan = idScan
+        if chaveScan ~= ultimoScanAutomaticoChave then
+            ultimoScanAutomaticoChave = chaveScan
+            lua_thread.create(function()
+                wait(350)
+                if tostring(idTelado or "") == idScan then
+                    _G.HZSolicitarScanNoChat(idScan)
+                end
+            end)
         end
     end
 end
@@ -1405,6 +1476,7 @@ local function paineltv_onPlayerTextDrawSetString(playerId, id, text) paineltv_p
 function _G.HZPainelTVEncerrarTelagem()
     idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
     ultimoIdTelado = "---"
+    ultimoScanAutomaticoChave = nil
     setCursor(false)
     aguardandoConfirmBanPerm = false
     janela.v = false
@@ -7421,6 +7493,35 @@ function samp.onSendCommand(cmd)
 end
 
 function samp.onShowDialog(id, style, title, button1, button2, text)
+    local agora = os.clock and os.clock() or 0
+    local aguardandoScanAte = tonumber(_G.HZScanChat and _G.HZScanChat.aguardandoAte) or 0
+    local tituloPossivelScan = tostring(title or ""):gsub("{%x%x%x%x%x%x}", ""):lower()
+    local textoPossivelScan = tostring(text or ""):gsub("{%x%x%x%x%x%x}", ""):lower()
+    local ehDialogScan = tituloPossivelScan:find("scan", 1, true)
+        or (tituloPossivelScan:find("informa", 1, true)
+            and tituloPossivelScan:find("jogador", 1, true)
+            and not textoPossivelScan:find("reportador", 1, true))
+    if aguardandoScanAte > 0 and agora <= aguardandoScanAte and ehDialogScan then
+        _G.HZScanChat.aguardandoAte = 0
+        local tituloLimpo = tostring(title or ""):gsub("{%x%x%x%x%x%x}", "")
+        local conteudo = tostring(text or "")
+        sampAddChatMessage("{48C6FF}[SCAN] " .. (tituloLimpo ~= "" and tituloLimpo or "Informacoes do jogador"), -1)
+        local adicionouLinha = false
+        for linha in (conteudo .. "\n"):gmatch("(.-)\n") do
+            linha = linha:gsub("{%x%x%x%x%x%x}", ""):gsub("\t", "  ")
+            linha = linha:match("^%s*(.-)%s*$") or ""
+            if linha ~= "" then
+                sampAddChatMessage("{FFFFFF}" .. linha, -1)
+                adicionouLinha = true
+            end
+        end
+        if not adicionouLinha then
+            sampAddChatMessage("{FFB347}[SCAN] O servidor nao retornou detalhes.", -1)
+        end
+        return false
+    elseif aguardandoScanAte > 0 and agora > aguardandoScanAte then
+        _G.HZScanChat.aguardandoAte = 0
+    end
     if _G.HZAvisosAC and _G.HZAvisosAC.registrarDialogo then
         _G.HZAvisosAC.registrarDialogo(id, title, text)
     end
