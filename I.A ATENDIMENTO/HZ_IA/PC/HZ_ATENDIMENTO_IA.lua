@@ -1,6 +1,6 @@
 script_name('HZ Atendimento IA')
 script_author('HZ')
-script_version('1.2.0')
+script_version('2.0.0')
 
 require 'moonloader'
 local sampev = require 'lib.samp.events'
@@ -77,7 +77,7 @@ local function queue_dialog(item)
     table.insert(dialog_queue, item)
 end
 
-local function clear_old_support()
+local function clear_old_support(preserve_incoming)
     notice_visible = false
     notice_opened_at = 0
     notice_item = nil
@@ -85,9 +85,11 @@ local function clear_old_support()
     if download_item and (download_item.type == 'support_start' or download_item.type == 'support_message') then
         download_item.discard = true
     end
-    for index = #incoming, 1, -1 do
-        if incoming[index].type == 'support_start' or incoming[index].type == 'support_message' or incoming[index].type == 'support_staff_message' then
-            table.remove(incoming, index)
+    if not preserve_incoming then
+        for index = #incoming, 1, -1 do
+            if incoming[index].type == 'support_start' or incoming[index].type == 'support_message' or incoming[index].type == 'support_staff_message' then
+                table.remove(incoming, index)
+            end
         end
     end
     for index = #dialog_queue, 1, -1 do
@@ -107,14 +109,17 @@ end
 
 local function show_answer_dialog()
     if not active_dialog then return end
-    local title = active_dialog.type == 'question' and 'HZ IA - DUVIDA' or 'HZ IA - ATENDIMENTO'
+    local state = active_dialog.ai_state or 'answering'
+    local title = state == 'clarifying' and 'HZ IA - ESCLARECER' or (state == 'escalating' and 'HZ IA - ESCALAR' or (active_dialog.type == 'question' and 'HZ IA - DUVIDA' or 'HZ IA - ATENDIMENTO'))
+    local result_label = state == 'clarifying' and 'Pergunta sugerida' or (state == 'escalating' and 'Orientacao segura' or 'Resposta sugerida')
+    local confidence = tonumber(active_dialog.confidence or 0) or 0
     local text
     if active_dialog.type == 'question' then
-        text = string.format('{38D8E8}Jogador:{FFFFFF} %s\n{38D8E8}RG:{FFFFFF} %s\n\n{38D8E8}Pergunta:{FFFFFF}\n%s\n\n{62E6A7}Resposta sugerida:{FFFFFF}\n%s', active_dialog.player, active_dialog.rg, active_dialog.question, active_dialog.suggestion)
+        text = string.format('{38D8E8}Jogador:{FFFFFF} %s\n{38D8E8}RG:{FFFFFF} %s\n{38D8E8}Confianca:{FFFFFF} %d%%\n\n{38D8E8}Pergunta:{FFFFFF}\n%s\n\n{62E6A7}%s:{FFFFFF}\n%s', active_dialog.player, active_dialog.rg, confidence, active_dialog.question, result_label, active_dialog.suggestion)
     else
-        text = string.format('{38D8E8}Jogador:{FFFFFF} %s\n\n{38D8E8}Mensagem:{FFFFFF}\n%s\n\n{62E6A7}Resposta sugerida:{FFFFFF}\n%s', active_dialog.player, active_dialog.message, active_dialog.suggestion)
+        text = string.format('{38D8E8}Jogador:{FFFFFF} %s\n{38D8E8}Confianca:{FFFFFF} %d%%\n\n{38D8E8}Mensagem:{FFFFFF}\n%s\n\n{62E6A7}%s:{FFFFFF}\n%s', active_dialog.player, confidence, active_dialog.message, result_label, active_dialog.suggestion)
     end
-    sampShowDialog(DIALOG_APPROVE, title, text, 'APROVAR', 'OPCOES', 0)
+    sampShowDialog(DIALOG_APPROVE, title, text, state == 'clarifying' and 'PERGUNTAR' or 'APROVAR', 'OPCOES', 0)
     if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
 end
 
@@ -178,7 +183,7 @@ local notification_frame = imgui.OnFrame(
         imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.11, 0.12, 0.16, 0.96))
         imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.20, 0.60, 0.75, 1.00))
         imgui.Begin('##hz_ai_notification_safe', nil, flags)
-        local kind = item.type == 'question' and 'Nova duvida recebida' or 'Nova mensagem no atendimento'
+        local kind = item.ai_state == 'clarifying' and 'Contexto incompleto - pergunta sugerida' or (item.ai_state == 'escalating' and 'Caso precisa de decisao superior' or (item.type == 'question' and 'Nova duvida recebida' or 'Nova mensagem no atendimento'))
         imgui.TextColored(imgui.ImVec4(0.93, 0.95, 1.00, 1.00), 'HZ IA - NOVA MENSAGEM')
         imgui.SameLine(); imgui.SetCursorPosX(310)
         imgui.TextColored(imgui.ImVec4(0.60, 0.63, 0.70, 1.00), os.date('%H:%M'))
@@ -286,8 +291,18 @@ local function finish_download()
         local item = download_item
         download_item = nil
         if data.ok and item then
+            if item.type == 'support_finish_from_lua' then
+                if data.memory_saved then
+                    sampAddChatMessage('[HZ IA] Caso completo enviado para revisao no painel.', 0x62E6A7)
+                else
+                    sampAddChatMessage('[HZ IA] Atendimento encerrado sem caso suficiente para aprender.', 0xAAB7C4)
+                end
+            end
             if item.type == 'support_staff_message' and data.as_player then item.type = 'support_message' end
             if not item.discard and not data.skip and (item.type == 'question' or item.type == 'support_message') then
+                item.ai_state = data.state or 'answering'
+                item.confidence = tonumber(data.confidence or 0) or 0
+                item.missing_info = data.missing_info
                 item.suggestion = sanitize_game_text(data.suggestion or 'Nao encontrei uma resposta segura. Ensine a resposta correta.')
                 queue_dialog(item)
             elseif data.skip and (item.type == 'support_message' or item.type == 'question') then
@@ -315,7 +330,7 @@ function sampev.onServerMessage(color, text)
     local clean = strip_colors(text)
     local lower = clean:lower()
     if lower:find('atendimento finalizado', 1, true) or lower:find('finalizou o atendimento', 1, true) then
-        clear_old_support()
+        clear_old_support(true)
         support_target_name = nil
         support_target_rg = nil
         table.insert(incoming, {type = 'support_finish_from_lua', player = 'staff'})
@@ -370,10 +385,12 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
         if confirmed then
             local answer = sanitize_game_text(active_dialog.suggestion)
             if active_dialog.type == 'question' then sampSendChat('/d ' .. active_dialog.rg .. ' ' .. answer) else sampSendChat(answer) end
-            if active_dialog.type == 'question' then table.insert(incoming, {type = 'resolve_question', player = active_dialog.player, rg = active_dialog.rg, question = active_dialog.question, action = 'approved'}) end
-            if active_dialog.type == 'support_message' then
-                table.insert(incoming, {type = 'memory_feedback', scope = 'support', player = active_dialog.player, rg = active_dialog.rg or support_target_rg or '', question = active_dialog.message, answer = answer, action = 'approved'})
-                sampAddChatMessage('[HZ IA] Caso completo enviado para a memoria pendente.', 0x62E6A7)
+            if active_dialog.type == 'support_message' then table.insert(incoming, {type = 'support_staff_message', player = STAFF_ID, role = STAFF_ROLE, message = answer}) end
+            if active_dialog.type == 'question' and active_dialog.ai_state ~= 'clarifying' then table.insert(incoming, {type = 'resolve_question', player = active_dialog.player, rg = active_dialog.rg, question = active_dialog.question, action = 'approved'}) end
+            if active_dialog.ai_state == 'clarifying' then
+                sampAddChatMessage('[HZ IA] Pergunta de esclarecimento enviada. Aguardando resposta.', 0x38D8E8)
+            elseif active_dialog.type == 'support_message' then
+                sampAddChatMessage('[HZ IA] Orientacao enviada. O caso sera consolidado ao finalizar.', 0x62E6A7)
             end
             active_dialog = nil
             active_dialog_since = 0
@@ -388,7 +405,16 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
             active_dialog_since = 0
             queue_dialog(item)
         elseif tonumber(listboxId) == 0 then
-            pending_dialog = 'teach'
+            if active_dialog.ai_state == 'clarifying' then
+                sampAddChatMessage('[HZ IA] Uma pergunta de esclarecimento nao vira ensinamento.', 0xFFCC66)
+                local item = active_dialog
+                item.open_direct = true
+                active_dialog = nil
+                active_dialog_since = 0
+                queue_dialog(item)
+            else
+                pending_dialog = 'teach'
+            end
         elseif tonumber(listboxId) == 1 then
             sampAddChatMessage('[HZ IA] Mensagem ignorada.', 0xFFCC66)
             if active_dialog.type == 'question' then table.insert(incoming, {type = 'resolve_question', player = active_dialog.player, rg = active_dialog.rg, question = active_dialog.question, action = 'ignored'}) end
@@ -423,7 +449,9 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
             if answer and #answer > 0 then
                 local original = active_dialog.question or active_dialog.message
                 if active_dialog.type == 'question' then sampSendChat('/d ' .. active_dialog.rg .. ' ' .. answer) else sampSendChat(answer) end
-                table.insert(incoming, {type = 'teach', scope = active_dialog.type == 'support_message' and 'support' or 'question', player = active_dialog.player, rg = active_dialog.rg or support_target_rg or '', question = original, answer = answer})
+                if active_dialog.type == 'question' then
+                    table.insert(incoming, {type = 'teach', scope = 'question', player = active_dialog.player, rg = active_dialog.rg or '', question = original, answer = answer})
+                end
                 sampAddChatMessage('[HZ IA] Correcao salva e enviada.', 0x62E6A7)
             end
         end
