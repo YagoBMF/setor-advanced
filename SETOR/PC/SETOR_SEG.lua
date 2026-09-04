@@ -441,7 +441,8 @@ local tabelaTempos = {
     ["DB"] = 250, ["AB DESMANCHE"] = 250, ["KOS"] = 250,
     ["PG"] = 250, ["TK"] = 250, ["HK"] = 250, ["SLP"] = 250,
     ["INVASAO SEM AUTORIZACAO"] = 250, ["RDM"] = 250, ["RK"] = 250,
-    ["SPAWN KILL"] = 250, ["CORRENDO SAFE"] = 250, ["CL"] = 300, ["COMBAT LOG"] = 300,
+    ["SPAWN KILL"] = 250, ["CORRENDO SAFE"] = 250,
+    ["FUGA PARA FAVELA EM ACAO"] = 200, ["CL"] = 300, ["COMBAT LOG"] = 300,
     ["CORRUPCAO"] = 300, ["DARK RP"] = 300
 }
 
@@ -461,6 +462,7 @@ local motivosCadeia = {
     {"Anti-RP - Taser/Algema em trocacao", 200, "Taser/Algema em trocacao"},
     {"Anti-RP - Abuso de safe", 200, "Abuso de safe"},
     {"Anti-RP - Dirigir Ferido", 200, "Dirigir Ferido"},
+    {"Fuga para favela em acao", 200, "Fuga para favela em acao"},
     {"PTR solo - Policial solo em acao", 250, "Policial solo em acao"},
     {"VDM - Matar/Ferir com veiculo", 250, "Matar/Ferir com veiculo"},
     {"DB - Atirando de dentro do veiculo", 250, "Atirando de dentro do veiculo"},
@@ -1545,7 +1547,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.91")
+script_version("2.92")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -7250,7 +7252,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.91",
+    versao = "2.92",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
