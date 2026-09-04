@@ -1547,7 +1547,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.93")
+script_version("2.94")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -4419,17 +4419,10 @@ function _G.HZTextoPunicaoCopiar(adm, nick, rg, tempo, motivo)
 end
 
 function _G.HZAbrirTextoPunicao(texto)
-    if type(sampSetCurrentDialogEditboxText) ~= "function" then
-        sampShowDialog(_G.HZDialogPunicaoCopiarId, "SETOR - COPIAR PUNICAO", texto, "FECHAR", "", 0)
-        return
-    end
-    sampShowDialog(_G.HZDialogPunicaoCopiarId, "SETOR - COPIAR PUNICAO",
-        "Selecione e copie o registro abaixo:", "FECHAR", "", 1)
+    _G.HZTextoPunicaoPendente = tostring(texto or "")
+    sampShowDialog(_G.HZDialogPunicaoCopiarId, "SETOR - REGISTRO DA PUNICAO",
+        "Registro pronto para copiar.", "COPIAR", "FECHAR", 0)
     if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
-    lua_thread.create(function()
-        wait(80)
-        sampSetCurrentDialogEditboxText(texto)
-    end)
 end
 
 function _G.HZRegistrarPunicaoSessao(adm, nick, rg, tempo, motivo)
@@ -7303,7 +7296,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.93",
+    versao = "2.94",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7573,8 +7566,17 @@ function samp.onShowDialog(id, style, title, button1, button2, text)
 end
 
 function sampev.onSendDialogResponse(id, button, listboxId, input)
-    if tonumber(id) == tonumber(_G.HZDialogPunicaoCopiarId)
-        or tonumber(id) == tonumber(_G.HZDialogSetorLogsId) then
+    if tonumber(id) == tonumber(_G.HZDialogPunicaoCopiarId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou and type(setClipboardText) == "function" then
+            setClipboardText(tostring(_G.HZTextoPunicaoPendente or ""))
+            sampAddChatMessage("{3EDC81}[SETOR] Registro da punicao copiado.", -1)
+        elseif confirmou then
+            sampAddChatMessage("{FF5555}[SETOR] Area de transferencia indisponivel.", -1)
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogSetorLogsId) then
         return false
     end
     if tonumber(id) == tonumber(_G.HZDialogComandosId) then
