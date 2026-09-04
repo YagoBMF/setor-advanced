@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.20'
+local VERSION = '4.21'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -566,6 +566,7 @@ function _G.HZMobileAbrirSetorLogs()
         or 'Nenhuma punicao confirmada nesta sessao.'
     sampShowDialog(_G.HZMobileDialogSetorLogs, 'SETOR LOGS - ULTIMAS 7 PUNICOES', texto,
         #linhas > 0 and 'ABRIR' or 'FECHAR', 'FECHAR', #linhas > 0 and 2 or 0)
+    if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
 end
 
 function _G.HZMobileAbrirSetorLogDetalhe(indice)
@@ -575,6 +576,7 @@ function _G.HZMobileAbrirSetorLogDetalhe(indice)
     sampShowDialog(_G.HZMobileDialogSetorLogDetalhe,
         string.format('SETOR LOGS - %s (RG: %s)', item.nick, item.rg),
         item.texto, 'COPIAR', 'VOLTAR', 0)
+    if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
 end
 
 local function moduloPermitido(id)
