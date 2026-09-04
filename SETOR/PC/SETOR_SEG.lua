@@ -1547,7 +1547,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.95")
+script_version("2.96")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -4447,6 +4447,7 @@ function _G.HZAbrirSetorLogs()
         or "Nenhuma punicao confirmada nesta sessao."
     sampShowDialog(_G.HZDialogSetorLogsId, "SETOR LOGS - ULTIMAS 7 PUNICOES", texto,
         #linhas > 0 and "ABRIR" or "FECHAR", "FECHAR", #linhas > 0 and 2 or 0)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
 end
 
 function _G.HZAbrirSetorLogDetalhe(indice)
@@ -4456,6 +4457,7 @@ function _G.HZAbrirSetorLogDetalhe(indice)
     sampShowDialog(_G.HZDialogSetorLogDetalheId,
         string.format("SETOR LOGS - %s (RG: %s)", item.nick, item.rg),
         item.texto, "COPIAR", "VOLTAR", 0)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
 end
 
 function _G.HZAbrirPainelAutomacoes()
@@ -7306,7 +7308,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.95",
+    versao = "2.96",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
