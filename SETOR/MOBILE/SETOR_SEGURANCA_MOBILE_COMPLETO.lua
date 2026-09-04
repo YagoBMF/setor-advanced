@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.17'
+local VERSION = '4.18'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -58,7 +58,7 @@ local cfg = inicfg.load({
     modulos = {
         painel_tv = true, navegacao_tv = true,
         monitoramento = true, acoes_staff = true, atendimento = true,
-        automacoes_staff = true, visual_staff = false,
+        automacoes_staff = true, copiar_punicao = true, visual_staff = false,
         visual_nomes = true, visual_id = false,
         visual_status = true, visual_arma = true, logs = true
     },
@@ -109,6 +109,7 @@ if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
 if cfg.modulos.monitoramento == nil then cfg.modulos.monitoramento = true end
 if cfg.modulos.atendimento == nil then cfg.modulos.atendimento = true end
 if cfg.modulos.automacoes_staff == nil then cfg.modulos.automacoes_staff = true end
+if cfg.modulos.copiar_punicao == nil then cfg.modulos.copiar_punicao = true end
 if cfg.modulos.visual_staff == nil then cfg.modulos.visual_staff = false end
 if cfg.modulos.visual_nomes == nil then cfg.modulos.visual_nomes = true end
 if cfg.modulos.visual_id == nil then cfg.modulos.visual_id = false end
@@ -515,6 +516,7 @@ local MODULOS_INFO = {
     monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
     acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3},
     automacoes_staff = {'AUTOMACOES STAFF', 'Ativa ou pausa todos os anuncios do /setorauto.', 1},
+    copiar_punicao = {'COPIAR PUNICAO', 'Abre o texto pronto apos validar.', 1},
     visual_staff = {'VISUAL STAFF', 'Exibe informacoes dos players.', 1}
 }
 
@@ -522,8 +524,55 @@ local MODULOS_CATEGORIAS = {
     {'PAINEIS', 'Atendimento rapido, Painel TV e punicoes.', {'atendimento', 'painel_tv'}},
     {'NAVEGACAO', 'Selecao e navegacao de jogadores.', {'navegacao_tv'}},
     {'FERRAMENTAS', 'Monitoramento, acoes e automacoes.',
-        {'monitoramento', 'acoes_staff', 'automacoes_staff', 'visual_staff'}}
+        {'monitoramento', 'acoes_staff', 'automacoes_staff', 'visual_staff', 'copiar_punicao'}}
 }
+
+_G.HZMobileDialogPunicaoCopiar = 28028
+_G.HZMobileDialogSetorLogs = 28029
+_G.HZMobilePunicoesSessao = _G.HZMobilePunicoesSessao or {}
+
+function _G.HZMobileTextoPunicao(adm, nick, rg, tempo, motivo)
+    return string.format('ADM: %s\nNICK: %s\nRG: %s\nTEMPO: %s\nMOTIVO: %s\nPROVAS:',
+        tostring(adm or '?'), tostring(nick or '?'), tostring(rg or '?'),
+        tostring(tempo or '?'), tostring(motivo or '?'))
+end
+
+function _G.HZMobileAbrirTextoPunicao(texto)
+    if type(sampSetCurrentDialogEditboxText) ~= 'function' then
+        sampShowDialog(_G.HZMobileDialogPunicaoCopiar, 'SETOR - COPIAR PUNICAO', texto, 'FECHAR', '', 0)
+        return
+    end
+    sampShowDialog(_G.HZMobileDialogPunicaoCopiar, 'SETOR - COPIAR PUNICAO',
+        'Selecione e copie o registro abaixo:', 'FECHAR', '', 1)
+    if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
+    lua_thread.create(function()
+        wait(80)
+        sampSetCurrentDialogEditboxText(texto)
+    end)
+end
+
+function _G.HZMobileRegistrarPunicao(adm, nick, rg, tempo, motivo)
+    local texto = _G.HZMobileTextoPunicao(adm, nick, rg, tempo, motivo)
+    table.insert(_G.HZMobilePunicoesSessao, 1, {
+        hora = os.date('%H:%M:%S'), nick = tostring(nick or '?'),
+        rg = tostring(rg or '?'), tempo = tostring(tempo or '?'),
+        motivo = tostring(motivo or '?'), texto = texto
+    })
+    while #_G.HZMobilePunicoesSessao > 7 do table.remove(_G.HZMobilePunicoesSessao) end
+    if cfg.modulos.copiar_punicao ~= false then _G.HZMobileAbrirTextoPunicao(texto) end
+end
+
+function _G.HZMobileAbrirSetorLogs()
+    if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de consultar os logs.') end
+    local linhas = {}
+    for i, item in ipairs(_G.HZMobilePunicoesSessao) do
+        linhas[#linhas + 1] = string.format('%d. [%s] %s | RG: %s | %s\n   %s',
+            i, item.hora, item.nick, item.rg, item.tempo, item.motivo)
+    end
+    local texto = #linhas > 0 and table.concat(linhas, '\n\n')
+        or 'Nenhuma punicao confirmada nesta sessao.'
+    sampShowDialog(_G.HZMobileDialogSetorLogs, 'SETOR LOGS - ULTIMAS 7 PUNICOES', texto, 'FECHAR', '', 0)
+end
 
 local function moduloPermitido(id)
     local info = MODULOS_INFO[id]
@@ -713,6 +762,7 @@ end
 
 local function logPunicao(nick, rg, tempo, motivo, acao, url, tipo)
     local data = os.date('%d/%m/%Y - %H:%M:%S')
+    _G.HZMobileRegistrarPunicao(cfg.dados.nome, nick, rg, tempo, motivo)
     local geral = string.format('[%s] HZ-ADMIN: %s %s %s o(a) jogador(a) %s %s por %s (Motivo: %s)',
         data, cfg.dados.cargo, cfg.dados.nome, acao, nick, rg, tempo, motivo)
     local form = string.format('```\nADM: %s\nNICK: %s\nRG: %s\nTEMPO: %s\nMOTIVO: %s\nPROVAS: \n```',
@@ -2433,6 +2483,7 @@ local function registrarComandos()
         end
         abrirModulos()
     end)
+    sampRegisterChatCommand('setorlogs', _G.HZMobileAbrirSetorLogs)
     sampRegisterChatCommand('setorcomandos', function()
         if not exigirStaff('/setorcomandos') then return end
         mostrarAjuda()
@@ -2467,7 +2518,7 @@ local function registrarComandos()
         if nome == 'atalhos' then nome = 'acoes_staff' end
         if nome == 'logs' then return chat('{FF5555}', 'Logs sao obrigatorios e permanecem sempre ativos.') end
         if not nome or not MODULOS_INFO[nome] then
-            return chat('{FFFF00}', 'Use /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff|automacoes_staff on|off')
+            return chat('{FFFF00}', 'Use /modulo atendimento|painel_tv|navegacao_tv|monitoramento|acoes_staff|automacoes_staff|copiar_punicao on|off')
         end
         if not moduloPermitido(nome) then return chat('{FF5555}', 'Modulo bloqueado para o seu cargo.') end
         cfg.modulos[nome] = estado == 'on'
@@ -2700,7 +2751,8 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
     -- Usa o ID literal aqui para nao consumir mais um upvalue no callback,
     -- que ja fica proximo do limite de 60 do LuaJIT/MonetLoader.
-    if dialogId < D_MAIN or dialogId > 28026 then return end
+    if dialogId < D_MAIN or dialogId > 28029 then return end
+    if dialogId == _G.HZMobileDialogPunicaoCopiar or dialogId == _G.HZMobileDialogSetorLogs then return false end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
