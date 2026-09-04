@@ -1547,7 +1547,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.92")
+script_version("2.93")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -1652,6 +1652,7 @@ local configSistema = {
         atendimento = true,
         camera_staff = true,
         automacoes_staff = true,
+        copiar_punicao = true,
         visual_staff = false,
         visual_nomes = true,
         visual_id = false,
@@ -1662,7 +1663,7 @@ local configSistema = {
 
 _G.HZModulosPadrao = {
     painel_tv = true, navegacao_tv = true, monitoramento = true,
-    atendimento = true, camera_staff = true, automacoes_staff = true,
+    atendimento = true, camera_staff = true, automacoes_staff = true, copiar_punicao = true,
     visual_staff = false, visual_nomes = true, visual_id = false, visual_status = true,
     visual_arma = true
 }
@@ -1674,6 +1675,7 @@ _G.HZPermissaoMinimaModulo = {
     monitoramento = 3,
     camera_staff = 3,
     automacoes_staff = 1,
+    copiar_punicao = 1,
     visual_staff = 1
 }
 
@@ -4303,6 +4305,7 @@ _G.HZModulosUI = {
     { "atendimento", "ATENDIMENTO", "Cronometro visual de suporte." },
     { "camera_staff", "CAMERA STAFF", "Camera livre e comandos staff." },
     { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." },
+    { "copiar_punicao", "COPIAR PUNICAO", "Abre o texto pronto apos validar." },
     { "visual_staff", "VISUAL STAFF", "Exibe informacoes dos players." }
 }
 
@@ -4397,14 +4400,60 @@ _G.HZDialogAutoEditarComandoId = 28998
 _G.HZDialogAutoEditarTempoId = 28999
 _G.HZDialogAutoExcluirId = 29000
 _G.HZDialogVisualStaffId = 29001
+_G.HZDialogPunicaoCopiarId = 29002
+_G.HZDialogSetorLogsId = 29003
+_G.HZPunicoesSessao = _G.HZPunicoesSessao or {}
 _G.HZAutoDialogSelecionado = nil
 _G.HZAutoNovoComando = nil
 _G.HZModsCategorias = {
     { "PAINEIS", "Painel TV, atendimento e monitoramento.", { "painel_tv", "atendimento", "monitoramento" } },
     { "NAVEGACAO", "Atalhos para navegar entre jogadores.", { "navegacao_tv" } },
     { "FERRAMENTAS", "Camera, visual e rotinas automaticas da staff.",
-        { "camera_staff", "visual_staff", "automacoes_staff" } }
+        { "camera_staff", "visual_staff", "automacoes_staff", "copiar_punicao" } }
 }
+
+function _G.HZTextoPunicaoCopiar(adm, nick, rg, tempo, motivo)
+    return string.format("ADM: %s\nNICK: %s\nRG: %s\nTEMPO: %s\nMOTIVO: %s\nPROVAS:",
+        tostring(adm or "?"), tostring(nick or "?"), tostring(rg or "?"),
+        tostring(tempo or "?"), tostring(motivo or "?"))
+end
+
+function _G.HZAbrirTextoPunicao(texto)
+    if type(sampSetCurrentDialogEditboxText) ~= "function" then
+        sampShowDialog(_G.HZDialogPunicaoCopiarId, "SETOR - COPIAR PUNICAO", texto, "FECHAR", "", 0)
+        return
+    end
+    sampShowDialog(_G.HZDialogPunicaoCopiarId, "SETOR - COPIAR PUNICAO",
+        "Selecione e copie o registro abaixo:", "FECHAR", "", 1)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
+    lua_thread.create(function()
+        wait(80)
+        sampSetCurrentDialogEditboxText(texto)
+    end)
+end
+
+function _G.HZRegistrarPunicaoSessao(adm, nick, rg, tempo, motivo)
+    local texto = _G.HZTextoPunicaoCopiar(adm, nick, rg, tempo, motivo)
+    table.insert(_G.HZPunicoesSessao, 1, {
+        hora = os.date("%H:%M:%S"), nick = tostring(nick or "?"),
+        rg = tostring(rg or "?"), tempo = tostring(tempo or "?"),
+        motivo = tostring(motivo or "?"), texto = texto
+    })
+    while #_G.HZPunicoesSessao > 7 do table.remove(_G.HZPunicoesSessao) end
+    if _G.HZModuloAtivo("copiar_punicao") then _G.HZAbrirTextoPunicao(texto) end
+end
+
+function _G.HZAbrirSetorLogs()
+    if not _G.HZExigirStaff("/setorlogs") then return end
+    local linhas = {}
+    for i, item in ipairs(_G.HZPunicoesSessao) do
+        linhas[#linhas + 1] = string.format("%d. [%s] %s | RG: %s | %s\n   %s",
+            i, item.hora, item.nick, item.rg, item.tempo, item.motivo)
+    end
+    local texto = #linhas > 0 and table.concat(linhas, "\n\n")
+        or "Nenhuma punicao confirmada nesta sessao."
+    sampShowDialog(_G.HZDialogSetorLogsId, "SETOR LOGS - ULTIMAS 7 PUNICOES", texto, "FECHAR", "", 0)
+end
 
 function _G.HZAbrirPainelAutomacoes()
     if not _G.HZExigirStaff("/automacoes") then return false end
@@ -5655,6 +5704,7 @@ local function setor_main()
         _G.HZFecharPainelMods()
         _G.HZAbrirModsDialog()
     end)
+    sampRegisterChatCommand("setorlogs", _G.HZAbrirSetorLogs)
 
     -- Intercepta /tv diretamente porque algumas combinacoes de SA-MP/MoonLoader
     -- nao entregam comandos de servidor ao callback geral antes do envio.
@@ -6122,6 +6172,7 @@ end
 -- Mantido apenas para BAN, BANTEMP, CADEIA/PUNIÇÃO e MUTE.
 function enviarTudo(nick, id_ou_rg, tempo, motivo, acao, url, tipoPunicao)
     local staffLog = _G.HZNomeStaffAtual()
+    _G.HZRegistrarPunicaoSessao(staffLog, nick, id_ou_rg, tempo, motivo)
     lua_thread.create(function()
         local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
 
@@ -7252,7 +7303,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.92",
+    versao = "2.93",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7522,6 +7573,10 @@ function samp.onShowDialog(id, style, title, button1, button2, text)
 end
 
 function sampev.onSendDialogResponse(id, button, listboxId, input)
+    if tonumber(id) == tonumber(_G.HZDialogPunicaoCopiarId)
+        or tonumber(id) == tonumber(_G.HZDialogSetorLogsId) then
+        return false
+    end
     if tonumber(id) == tonumber(_G.HZDialogComandosId) then
         return false
     end
@@ -7835,3 +7890,4 @@ function samp.onPlayerQuit(id, reason)
     end
     if setor_onPlayerQuit then return setor_onPlayerQuit(id, reason) end
 end
+
