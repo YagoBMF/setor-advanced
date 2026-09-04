@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.18'
+local VERSION = '4.20'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -529,6 +529,7 @@ local MODULOS_CATEGORIAS = {
 
 _G.HZMobileDialogPunicaoCopiar = 28028
 _G.HZMobileDialogSetorLogs = 28029
+_G.HZMobileDialogSetorLogDetalhe = 28030
 _G.HZMobilePunicoesSessao = _G.HZMobilePunicoesSessao or {}
 
 function _G.HZMobileTextoPunicao(adm, nick, rg, tempo, motivo)
@@ -538,17 +539,10 @@ function _G.HZMobileTextoPunicao(adm, nick, rg, tempo, motivo)
 end
 
 function _G.HZMobileAbrirTextoPunicao(texto)
-    if type(sampSetCurrentDialogEditboxText) ~= 'function' then
-        sampShowDialog(_G.HZMobileDialogPunicaoCopiar, 'SETOR - COPIAR PUNICAO', texto, 'FECHAR', '', 0)
-        return
-    end
-    sampShowDialog(_G.HZMobileDialogPunicaoCopiar, 'SETOR - COPIAR PUNICAO',
-        'Selecione e copie o registro abaixo:', 'FECHAR', '', 1)
+    _G.HZMobileTextoPunicaoPendente = tostring(texto or '')
+    sampShowDialog(_G.HZMobileDialogPunicaoCopiar, 'SETOR - REGISTRO DA PUNICAO',
+        'Registro pronto para copiar.', 'COPIAR', 'FECHAR', 0)
     if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
-    lua_thread.create(function()
-        wait(80)
-        sampSetCurrentDialogEditboxText(texto)
-    end)
 end
 
 function _G.HZMobileRegistrarPunicao(adm, nick, rg, tempo, motivo)
@@ -566,12 +560,21 @@ function _G.HZMobileAbrirSetorLogs()
     if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de consultar os logs.') end
     local linhas = {}
     for i, item in ipairs(_G.HZMobilePunicoesSessao) do
-        linhas[#linhas + 1] = string.format('%d. [%s] %s | RG: %s | %s\n   %s',
-            i, item.hora, item.nick, item.rg, item.tempo, item.motivo)
+        linhas[#linhas + 1] = string.format('(%s) %s (RG: %s)', item.hora, item.nick, item.rg)
     end
-    local texto = #linhas > 0 and table.concat(linhas, '\n\n')
+    local texto = #linhas > 0 and table.concat(linhas, '\n')
         or 'Nenhuma punicao confirmada nesta sessao.'
-    sampShowDialog(_G.HZMobileDialogSetorLogs, 'SETOR LOGS - ULTIMAS 7 PUNICOES', texto, 'FECHAR', '', 0)
+    sampShowDialog(_G.HZMobileDialogSetorLogs, 'SETOR LOGS - ULTIMAS 7 PUNICOES', texto,
+        #linhas > 0 and 'ABRIR' or 'FECHAR', 'FECHAR', #linhas > 0 and 2 or 0)
+end
+
+function _G.HZMobileAbrirSetorLogDetalhe(indice)
+    local item = _G.HZMobilePunicoesSessao[tonumber(indice) or 0]
+    if not item then return _G.HZMobileAbrirSetorLogs() end
+    _G.HZMobileSetorLogSelecionado = tonumber(indice)
+    sampShowDialog(_G.HZMobileDialogSetorLogDetalhe,
+        string.format('SETOR LOGS - %s (RG: %s)', item.nick, item.rg),
+        item.texto, 'COPIAR', 'VOLTAR', 0)
 end
 
 local function moduloPermitido(id)
@@ -2751,8 +2754,37 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
     -- Usa o ID literal aqui para nao consumir mais um upvalue no callback,
     -- que ja fica proximo do limite de 60 do LuaJIT/MonetLoader.
-    if dialogId < D_MAIN or dialogId > 28029 then return end
-    if dialogId == _G.HZMobileDialogPunicaoCopiar or dialogId == _G.HZMobileDialogSetorLogs then return false end
+    if dialogId < D_MAIN or dialogId > 28030 then return end
+    if dialogId == _G.HZMobileDialogPunicaoCopiar then
+        local confirmou = button == true or button == 1 or tostring(button) == '1'
+        if confirmou and type(setClipboardText) == 'function' then
+            setClipboardText(tostring(_G.HZMobileTextoPunicaoPendente or ''))
+            sampAddChatMessage('{3EDC81}[SETOR] Registro da punicao copiado.', -1)
+        elseif confirmou then
+            sampAddChatMessage('{FF5555}[SETOR] Area de transferencia indisponivel.', -1)
+        end
+        return false
+    end
+    if dialogId == _G.HZMobileDialogSetorLogs then
+        local confirmou = button == true or button == 1 or tostring(button) == '1'
+        if confirmou and #_G.HZMobilePunicoesSessao > 0 then
+            _G.HZMobileAbrirSetorLogDetalhe((tonumber(listboxId) or 0) + 1)
+        end
+        return false
+    end
+    if dialogId == _G.HZMobileDialogSetorLogDetalhe then
+        local confirmou = button == true or button == 1 or tostring(button) == '1'
+        local item = _G.HZMobilePunicoesSessao[tonumber(_G.HZMobileSetorLogSelecionado) or 0]
+        if confirmou and item and type(setClipboardText) == 'function' then
+            setClipboardText(item.texto)
+            sampAddChatMessage('{3EDC81}[SETOR] Registro da punicao copiado.', -1)
+        elseif confirmou then
+            sampAddChatMessage('{FF5555}[SETOR] Area de transferencia indisponivel.', -1)
+        else
+            _G.HZMobileAbrirSetorLogs()
+        end
+        return false
+    end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
