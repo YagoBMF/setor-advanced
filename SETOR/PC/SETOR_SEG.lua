@@ -1547,7 +1547,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.94")
+script_version("2.95")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -4402,6 +4402,7 @@ _G.HZDialogAutoExcluirId = 29000
 _G.HZDialogVisualStaffId = 29001
 _G.HZDialogPunicaoCopiarId = 29002
 _G.HZDialogSetorLogsId = 29003
+_G.HZDialogSetorLogDetalheId = 29004
 _G.HZPunicoesSessao = _G.HZPunicoesSessao or {}
 _G.HZAutoDialogSelecionado = nil
 _G.HZAutoNovoComando = nil
@@ -4440,12 +4441,21 @@ function _G.HZAbrirSetorLogs()
     if not _G.HZExigirStaff("/setorlogs") then return end
     local linhas = {}
     for i, item in ipairs(_G.HZPunicoesSessao) do
-        linhas[#linhas + 1] = string.format("%d. [%s] %s | RG: %s | %s\n   %s",
-            i, item.hora, item.nick, item.rg, item.tempo, item.motivo)
+        linhas[#linhas + 1] = string.format("(%s) %s (RG: %s)", item.hora, item.nick, item.rg)
     end
-    local texto = #linhas > 0 and table.concat(linhas, "\n\n")
+    local texto = #linhas > 0 and table.concat(linhas, "\n")
         or "Nenhuma punicao confirmada nesta sessao."
-    sampShowDialog(_G.HZDialogSetorLogsId, "SETOR LOGS - ULTIMAS 7 PUNICOES", texto, "FECHAR", "", 0)
+    sampShowDialog(_G.HZDialogSetorLogsId, "SETOR LOGS - ULTIMAS 7 PUNICOES", texto,
+        #linhas > 0 and "ABRIR" or "FECHAR", "FECHAR", #linhas > 0 and 2 or 0)
+end
+
+function _G.HZAbrirSetorLogDetalhe(indice)
+    local item = _G.HZPunicoesSessao[tonumber(indice) or 0]
+    if not item then return _G.HZAbrirSetorLogs() end
+    _G.HZSetorLogSelecionado = tonumber(indice)
+    sampShowDialog(_G.HZDialogSetorLogDetalheId,
+        string.format("SETOR LOGS - %s (RG: %s)", item.nick, item.rg),
+        item.texto, "COPIAR", "VOLTAR", 0)
 end
 
 function _G.HZAbrirPainelAutomacoes()
@@ -7296,7 +7306,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.94",
+    versao = "2.95",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7577,6 +7587,23 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
         return false
     end
     if tonumber(id) == tonumber(_G.HZDialogSetorLogsId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou and #_G.HZPunicoesSessao > 0 then
+            _G.HZAbrirSetorLogDetalhe((tonumber(listboxId) or 0) + 1)
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogSetorLogDetalheId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        local item = _G.HZPunicoesSessao[tonumber(_G.HZSetorLogSelecionado) or 0]
+        if confirmou and item and type(setClipboardText) == "function" then
+            setClipboardText(item.texto)
+            sampAddChatMessage("{3EDC81}[SETOR] Registro da punicao copiado.", -1)
+        elseif confirmou then
+            sampAddChatMessage("{FF5555}[SETOR] Area de transferencia indisponivel.", -1)
+        else
+            _G.HZAbrirSetorLogs()
+        end
         return false
     end
     if tonumber(id) == tonumber(_G.HZDialogComandosId) then
