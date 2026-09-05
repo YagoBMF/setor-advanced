@@ -1547,7 +1547,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.96")
+script_version("2.97")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -7308,7 +7308,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.96",
+    versao = "2.97",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7591,7 +7591,11 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
     if tonumber(id) == tonumber(_G.HZDialogSetorLogsId) then
         local confirmou = button == true or button == 1 or tostring(button) == "1"
         if confirmou and #_G.HZPunicoesSessao > 0 then
-            _G.HZAbrirSetorLogDetalhe((tonumber(listboxId) or 0) + 1)
+            _G.HZSetorLogAbrirPendente = (tonumber(listboxId) or 0) + 1
+            lua_thread.create(function()
+                wait(100)
+                _G.HZAbrirSetorLogDetalhe(_G.HZSetorLogAbrirPendente)
+            end)
         end
         return false
     end
@@ -7604,7 +7608,10 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
         elseif confirmou then
             sampAddChatMessage("{FF5555}[SETOR] Area de transferencia indisponivel.", -1)
         else
-            _G.HZAbrirSetorLogs()
+            lua_thread.create(function()
+                wait(100)
+                _G.HZAbrirSetorLogs()
+            end)
         end
         return false
     end
