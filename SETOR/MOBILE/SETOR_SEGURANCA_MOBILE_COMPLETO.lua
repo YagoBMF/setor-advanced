@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.21'
+local VERSION = '4.22'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -2770,7 +2770,11 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     if dialogId == _G.HZMobileDialogSetorLogs then
         local confirmou = button == true or button == 1 or tostring(button) == '1'
         if confirmou and #_G.HZMobilePunicoesSessao > 0 then
-            _G.HZMobileAbrirSetorLogDetalhe((tonumber(listboxId) or 0) + 1)
+            _G.HZMobileSetorLogAbrirPendente = (tonumber(listboxId) or 0) + 1
+            lua_thread.create(function()
+                wait(100)
+                _G.HZMobileAbrirSetorLogDetalhe(_G.HZMobileSetorLogAbrirPendente)
+            end)
         end
         return false
     end
@@ -2783,7 +2787,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         elseif confirmou then
             sampAddChatMessage('{FF5555}[SETOR] Area de transferencia indisponivel.', -1)
         else
-            _G.HZMobileAbrirSetorLogs()
+            lua_thread.create(function()
+                wait(100)
+                _G.HZMobileAbrirSetorLogs()
+            end)
         end
         return false
     end
