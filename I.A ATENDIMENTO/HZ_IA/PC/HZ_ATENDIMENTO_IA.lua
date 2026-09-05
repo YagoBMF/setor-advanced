@@ -1,6 +1,6 @@
 script_name('HZ Atendimento IA')
 script_author('HZ')
-script_version('2.0.0')
+script_version('2.0.1')
 
 require 'moonloader'
 local sampev = require 'lib.samp.events'
@@ -119,7 +119,11 @@ local function show_answer_dialog()
     else
         text = string.format('{38D8E8}Jogador:{FFFFFF} %s\n{38D8E8}Confianca:{FFFFFF} %d%%\n\n{38D8E8}Mensagem:{FFFFFF}\n%s\n\n{62E6A7}%s:{FFFFFF}\n%s', active_dialog.player, confidence, active_dialog.message, result_label, active_dialog.suggestion)
     end
-    sampShowDialog(DIALOG_APPROVE, title, text, state == 'clarifying' and 'PERGUNTAR' or 'APROVAR', 'OPCOES', 0)
+    local dialog_style = state == 'clarifying' and 1 or 0
+    sampShowDialog(DIALOG_APPROVE, title, text, state == 'clarifying' and 'PERGUNTAR' or 'APROVAR', 'OPCOES', dialog_style)
+    if state == 'clarifying' and type(sampSetCurrentDialogEditboxText) == 'function' then
+        sampSetCurrentDialogEditboxText(tostring(active_dialog.suggestion or ''))
+    end
     if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
 end
 
@@ -383,7 +387,19 @@ function sampev.onSendDialogResponse(id, button, listboxId, input)
     local confirmed = button == true or button == 1 or tostring(button) == '1'
     if id == DIALOG_APPROVE and active_dialog then
         if confirmed then
-            local answer = sanitize_game_text(active_dialog.suggestion)
+            local answer_source = active_dialog.suggestion
+            if active_dialog.ai_state == 'clarifying' and tostring(input or ''):match('%S') then
+                answer_source = input
+            end
+            local answer = sanitize_game_text(answer_source)
+            if active_dialog.ai_state == 'clarifying' and answer == '' then
+                sampAddChatMessage('[HZ IA] Escreva a pergunta antes de enviar.', 0xFF6666)
+                pending_dialog = 'answer'
+                return false
+            end
+            if active_dialog.ai_state == 'clarifying' then
+                active_dialog.suggestion = answer
+            end
             if active_dialog.type == 'question' then sampSendChat('/d ' .. active_dialog.rg .. ' ' .. answer) else sampSendChat(answer) end
             if active_dialog.type == 'support_message' then table.insert(incoming, {type = 'support_staff_message', player = STAFF_ID, role = STAFF_ROLE, message = answer}) end
             if active_dialog.type == 'question' and active_dialog.ai_state ~= 'clarifying' then table.insert(incoming, {type = 'resolve_question', player = active_dialog.player, rg = active_dialog.rg, question = active_dialog.question, action = 'approved'}) end
