@@ -8,6 +8,8 @@ do
 -- integrado: script_author removido
 require "lib.moonloader"
 local imgui = require "imgui"
+-- Garante que um reload nunca herde o bloqueio de teclado/mouse da versao 3.02.
+imgui.DisableInput = false
 -- Uma unica interface compativel evita diferencas entre PCs e MoonLoaders.
 _G.HZMimguiOk, _G.HZMimgui = false, nil
 _G.HZMimguiAtivado, _G.HZMimguiRecuperado = false, false
@@ -19,6 +21,24 @@ local sampev = require "lib.samp.events"
 -- >>> (Ícone ⚙) <<<
 local ffi = require "ffi"
 local ICON_GEAR = "\226\154\153" -- ⚙ em UTF-8 (evita bug de encoding)
+
+-- Estado real da selecao de TextDraw no SA-MP desta instalacao. A biblioteca
+-- escolhe automaticamente entre 0.3.7 R1/R3/R5.
+_G.HZTextDrawSelectionApi = nil
+pcall(function()
+    local sampapi = require "sampapi"
+    _G.HZTextDrawSelectionApi = sampapi.require("CTextDrawSelection", true)
+end)
+
+function _G.HZTextDrawSelecionavelAtivo()
+    if not _G.HZTextDrawSelectionApi then return false end
+    local ok, ativo = pcall(function()
+        local selecao = _G.HZTextDrawSelectionApi.RefTextDrawSelection()
+        return selecao ~= nil and selecao ~= ffi.NULL
+            and tonumber(selecao.m_bIsActive) ~= 0
+    end)
+    return ok and ativo == true
+end
 
 -- >>> (Hotkeys) <<<
 local vkeys = require "vkeys"
@@ -256,12 +276,32 @@ end
 -- Auto abrir painel quando começar a telar alguém
 local painelAutoAbrir = true
 local painelAbertoPorAuto = false
+_G.HZTelagemAtivaPc = _G.HZTelagemAtivaPc == true
 
 -- Controle de cursor (configuração)
 local cursorAtivo = false
 local function setCursor(state)
     cursorAtivo = state and true or false
     imgui.ShowCursor = cursorAtivo
+end
+
+-- Libera apenas os controles que foram tomados pelo Painel TV. O cursor do
+-- servidor nao e desligado quando pertence a um inventario/TextDraw selecionavel.
+function _G.HZPainelTVLiberarInterface()
+    setCursor(false)
+    if _G.HZPainelCursorNativo then
+        if type(sampToggleCursor) == "function" then sampToggleCursor(false) end
+        _G.HZPainelCursorNativo = false
+    end
+    _G.HZPainelCampoFoco = nil
+    _G.HZPainelCampoFocoFrames = 0
+
+    local modsAberto = _G.HZModsJanela and _G.HZModsJanela.v
+    local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
+        and _G.HZMonitorPanel.aberto.v
+    if not modsAberto and not monitorAberto then
+        imgui.Process = false
+    end
 end
 
 -- ======================
@@ -441,7 +481,8 @@ local tabelaTempos = {
     ["DB"] = 250, ["AB DESMANCHE"] = 250, ["KOS"] = 250,
     ["PG"] = 250, ["TK"] = 250, ["HK"] = 250, ["SLP"] = 250,
     ["INVASAO SEM AUTORIZACAO"] = 250, ["RDM"] = 250, ["RK"] = 250,
-    ["SPAWN KILL"] = 250, ["CORRENDO SAFE"] = 250, ["CL"] = 300, ["COMBAT LOG"] = 300,
+    ["SPAWN KILL"] = 250, ["CORRENDO SAFE"] = 250,
+    ["FUGA PARA FAVELA EM ACAO"] = 200, ["CL"] = 300, ["COMBAT LOG"] = 300,
     ["CORRUPCAO"] = 300, ["DARK RP"] = 300
 }
 
@@ -461,6 +502,7 @@ local motivosCadeia = {
     {"Anti-RP - Taser/Algema em trocacao", 200, "Taser/Algema em trocacao"},
     {"Anti-RP - Abuso de safe", 200, "Abuso de safe"},
     {"Anti-RP - Dirigir Ferido", 200, "Dirigir Ferido"},
+    {"Fuga para favela em acao", 200, "Fuga para favela em acao"},
     {"PTR solo - Policial solo em acao", 250, "Policial solo em acao"},
     {"VDM - Matar/Ferir com veiculo", 250, "Matar/Ferir com veiculo"},
     {"DB - Atirando de dentro do veiculo", 250, "Atirando de dentro do veiculo"},
@@ -566,7 +608,7 @@ local function paineltv_main()
         janela.v = not janela.v
         menuAtual = "principal"
         aguardandoConfirmBanPerm = false
-        setCursor(false)
+        if janela.v then setCursor(false) else _G.HZPainelTVLiberarInterface() end
         painelAbertoPorAuto = false
     end
     sampRegisterChatCommand("ptv", alternarPainelTv)
@@ -576,6 +618,16 @@ local function paineltv_main()
         -- 10 ms preserva a resposta dos atalhos e evita ocupar um ciclo inteiro
         -- da CPU a cada frame quando o painel esta fechado.
         wait(10)
+        -- A biblioteca ImGui consome WM_LBUTTON mesmo quando apenas desenha o
+        -- painel. Se o SA-MP ativou o cursor (inventario/loja/TextDraw) e esse
+        -- cursor nao pertence ao Painel TV, a entrada do ImGui fica suspensa.
+        -- A verificacao por ciclo evita o estado preso que ocorreu na 3.02.
+        local cursorSampAtivo = _G.HZTextDrawSelecionavelAtivo()
+        local painelQuerMouse = cursorAtivo or _G.HZPainelCursorNativo == true
+        if cursorSampAtivo and not painelQuerMouse then
+            imgui.Process = false
+        end
+
         if #(_G.HZFilaTextdraw or {}) > 0 then
             local okFilaTextdraw, erroFilaTextdraw = pcall(_G.HZProcessarFilaTextdraw)
             if not okFilaTextdraw then
@@ -589,7 +641,7 @@ local function paineltv_main()
                 janela.v = not janela.v
                 menuAtual = "principal"
                 aguardandoConfirmBanPerm = false
-                setCursor(false)
+                if janela.v then setCursor(false) else _G.HZPainelTVLiberarInterface() end
                 painelAbertoPorAuto = false
             end
             if hotkeyF7TvOff and isKeyJustPressed(vkeys.VK_F7) then
@@ -608,7 +660,11 @@ local function paineltv_main()
             end
         end
 
-        if janela.v then imgui.Process = true end
+        if _G.HZTextDrawSelecionavelAtivo() then
+            imgui.Process = false
+        elseif janela.v then
+            imgui.Process = true
+        end
     end
 end
 
@@ -819,7 +875,7 @@ local function paineltv_OnDrawFrame()
         menuAtual = "principal"
         aguardandoConfirmBanPerm = false
         painelAbertoPorAuto = false
-        setCursor(false)
+        _G.HZPainelTVLiberarInterface()
     end
     imgui.EndChild()
 
@@ -1073,26 +1129,16 @@ local function paineltv_OnDrawFrame()
     elseif menuAtual:find("lista_") then
         imgui.TextColored(C_LINE, u8(labelPunicao))
         imgui.TextColored(C_MUTED, comandoBase == "/mutevoip"
-            and u8"Defina o tempo da restricao" or u8"Informe ou selecione o motivo")
+            and u8"Confira o motivo fixo" or u8"Informe ou selecione o motivo")
         imgui.Separator()
         if comandoBase == "/mutevoip" then
             motivoSel = "USO INDEVIDO DO VOIP"
             imgui.TextColored(C_MUTED, u8"MOTIVO FIXO")
             imgui.TextColored(C_TEXT, u8(motivoSel))
             imgui.Spacing()
-            imgui.TextColored(C_MUTED, u8"Tempo (Dias)")
-            imgui.PushItemWidth(-1)
-            imgui.InputInt("##tempo_voip", tempoPunicao)
-            manterFocoCampoPainel("tempo_voip")
-            imgui.PopItemWidth()
-
             if hzButton(u8"PROSSEGUIR", imgui.ImVec2(-1, H_BTN_MAIN), C_PRIMARY, C_HOVER, C_ACTIVE) then
-                if (tonumber(tempoPunicao.v) or 0) <= 0 then
-                    sampAddChatMessage("{FF5555}[SETOR]: Informe os dias do Mute VOIP.", -1)
-                else
-                    menuAtual = "confirmar"
-                    aguardandoConfirmBanPerm = false
-                end
+                menuAtual = "confirmar"
+                aguardandoConfirmBanPerm = false
             end
             if hzButton(u8"DESMUTAR", V(-1, 30), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
                 if podeExecutarAcao() then
@@ -1193,7 +1239,7 @@ local function paineltv_OnDrawFrame()
         if comandoBase == "/punicao" and levelConfirmacao and levelConfirmacao >= 0 and levelConfirmacao <= 30 then
             imgui.TextColored(C_WARN, u8("REGRA NOVATO LEVEL 0-30 APLICADA"))
         end
-        if comandoBase ~= "/kick" then
+        if comandoBase ~= "/kick" and comandoBase ~= "/mutevoip" then
             local txt = (comandoBase == "/ban" or comandoBase == "/mute" or comandoBase == "/mutevoip") and u8"DIAS" or u8"TEMPO"
             imgui.InputInt(txt, tempoPunicao)
             manterFocoCampoPainel("tempo_confirmacao")
@@ -1222,6 +1268,8 @@ local function paineltv_OnDrawFrame()
                         else
                             sampSendChat("/bantemp " .. rgTelado .. " " .. tempoPunicao.v .. " " .. motivoSel)
                         end
+                    elseif comandoBase == "/mutevoip" then
+                        sampSendChat("/mutevoip " .. rgTelado .. " " .. motivoSel)
                     else
                         sampSendChat(comandoBase .. " " .. rgTelado .. " " .. tempoPunicao.v .. " " .. motivoSel)
                     end
@@ -1277,6 +1325,9 @@ end
 -- ======================
 local function paineltv_parse_info(text)
     paineltv_tentar_capturar_relogio(text)
+    -- Inventarios e estabelecimentos tambem usam textos como "ID: 426".
+    -- Fora de uma telagem, esses IDs nunca podem reabrir o Painel TV.
+    if not _G.HZTelagemAtivaPc then return end
     local clean = text:gsub("{%x%x%x%x%x%x}", ""):gsub("%s+", " ")
     local n = clean:match("NICK:%s*([A-Za-z0-9_]+)")
     local r = clean:match("RG:%s*(%d+)")
@@ -1474,10 +1525,16 @@ end
 local function paineltv_onPlayerTextDrawSetString(playerId, id, text) paineltv_parse_info(text) end
 
 function _G.HZPainelTVEncerrarTelagem()
+    _G.HZTelagemAtivaPc = false
+    _G.HZFilaTextdraw = {}
+    -- Durante dois minutos registra somente o caminho dos cliques, sem
+    -- consumir ou modificar nenhuma entrada. Facilita diagnosticar o estado
+    -- residual imediatamente depois de sair da telagem.
+    _G.HZDiagnosticoCliqueAte = (os.clock and os.clock() or 0) + 120
     idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
     ultimoIdTelado = "---"
     ultimoScanAutomaticoChave = nil
-    setCursor(false)
+    _G.HZPainelTVLiberarInterface()
     aguardandoConfirmBanPerm = false
     janela.v = false
     painelAbertoPorAuto = false
@@ -1488,12 +1545,14 @@ local function paineltv_onSendCommand(cmd)
     local cmdAc = tostring(cmd or ""):lower():match("^%s*(.-)%s*$")
     if cmdAc == "/reports" or cmdAc:match("^/reports%s+") then
         _G.HZAvisosAC.marcarReport()
-    elseif cmdAc:match("^/tv%s+") or cmdAc == "/tvz" then
+    elseif cmdAc:match("^/tv%s+") then
+        _G.HZTelagemAtivaPc = true
         -- /tv digitado, painel e navegacao pelas setas nao sao telagens de report.
         _G.HZAvisosAC.cancelarReport()
     end
 
     if cmdAc:match("^/tvoff") then
+        _G.HZTelagemAtivaPc = false
         _G.HZAvisosAC.aguardandoReport = false
         _G.HZPainelTVEncerrarTelagem()
 
@@ -1519,7 +1578,7 @@ end
             if not ativo then
                 janela.v = false
                 painelAbertoPorAuto = false
-                setCursor(false)
+                _G.HZPainelTVLiberarInterface()
             end
         end
     }
@@ -1553,7 +1612,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.89")
+script_version("3.06")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -1658,6 +1717,7 @@ local configSistema = {
         atendimento = true,
         camera_staff = true,
         automacoes_staff = true,
+        copiar_punicao = true,
         visual_staff = false,
         visual_nomes = true,
         visual_id = false,
@@ -1668,7 +1728,7 @@ local configSistema = {
 
 _G.HZModulosPadrao = {
     painel_tv = true, navegacao_tv = true, monitoramento = true,
-    atendimento = true, camera_staff = true, automacoes_staff = true,
+    atendimento = true, camera_staff = true, automacoes_staff = true, copiar_punicao = true,
     visual_staff = false, visual_nomes = true, visual_id = false, visual_status = true,
     visual_arma = true
 }
@@ -1680,6 +1740,7 @@ _G.HZPermissaoMinimaModulo = {
     monitoramento = 3,
     camera_staff = 3,
     automacoes_staff = 1,
+    copiar_punicao = 1,
     visual_staff = 1
 }
 
@@ -2125,6 +2186,8 @@ local function telarJogadorOnlinePelaTAB(id, nick)
         sampAddChatMessage("{FF0000}ERRO: Jogador nao esta online para telar pela TAB.", -1)
         return false
     end
+
+    _G.HZTelagemAtivaPc = true
 
     nick = nick or sampGetPlayerNickname(id) or tostring(id)
 
@@ -4309,6 +4372,7 @@ _G.HZModulosUI = {
     { "atendimento", "ATENDIMENTO", "Cronometro visual de suporte." },
     { "camera_staff", "CAMERA STAFF", "Camera livre e comandos staff." },
     { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." },
+    { "copiar_punicao", "COPIAR PUNICAO", "Abre o texto pronto apos validar." },
     { "visual_staff", "VISUAL STAFF", "Exibe informacoes dos players." }
 }
 
@@ -4403,14 +4467,65 @@ _G.HZDialogAutoEditarComandoId = 28998
 _G.HZDialogAutoEditarTempoId = 28999
 _G.HZDialogAutoExcluirId = 29000
 _G.HZDialogVisualStaffId = 29001
+_G.HZDialogPunicaoCopiarId = 29002
+_G.HZDialogSetorLogsId = 29003
+_G.HZDialogSetorLogDetalheId = 29004
+_G.HZPunicoesSessao = _G.HZPunicoesSessao or {}
 _G.HZAutoDialogSelecionado = nil
 _G.HZAutoNovoComando = nil
 _G.HZModsCategorias = {
     { "PAINEIS", "Painel TV, atendimento e monitoramento.", { "painel_tv", "atendimento", "monitoramento" } },
     { "NAVEGACAO", "Atalhos para navegar entre jogadores.", { "navegacao_tv" } },
     { "FERRAMENTAS", "Camera, visual e rotinas automaticas da staff.",
-        { "camera_staff", "visual_staff", "automacoes_staff" } }
+        { "camera_staff", "visual_staff", "automacoes_staff", "copiar_punicao" } }
 }
+
+function _G.HZTextoPunicaoCopiar(adm, nick, rg, tempo, motivo)
+    return string.format("ADM: %s\nNICK: %s\nRG: %s\nTEMPO: %s\nMOTIVO: %s\nPROVAS:",
+        tostring(adm or "?"), tostring(nick or "?"), tostring(rg or "?"),
+        tostring(tempo or "?"), tostring(motivo or "?"))
+end
+
+function _G.HZAbrirTextoPunicao(texto)
+    _G.HZTextoPunicaoPendente = tostring(texto or "")
+    sampShowDialog(_G.HZDialogPunicaoCopiarId, "SETOR - REGISTRO DA PUNICAO",
+        "Registro pronto para copiar.", "COPIAR", "FECHAR", 0)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
+end
+
+function _G.HZRegistrarPunicaoSessao(adm, nick, rg, tempo, motivo)
+    local texto = _G.HZTextoPunicaoCopiar(adm, nick, rg, tempo, motivo)
+    table.insert(_G.HZPunicoesSessao, 1, {
+        hora = os.date("%H:%M:%S"), nick = tostring(nick or "?"),
+        rg = tostring(rg or "?"), tempo = tostring(tempo or "?"),
+        motivo = tostring(motivo or "?"), texto = texto
+    })
+    while #_G.HZPunicoesSessao > 7 do table.remove(_G.HZPunicoesSessao) end
+    if _G.HZModuloAtivo("copiar_punicao") then _G.HZAbrirTextoPunicao(texto) end
+end
+
+function _G.HZAbrirSetorLogs()
+    if not _G.HZExigirStaff("/setorlogs") then return end
+    local linhas = {}
+    for i, item in ipairs(_G.HZPunicoesSessao) do
+        linhas[#linhas + 1] = string.format("(%s) %s (RG: %s)", item.hora, item.nick, item.rg)
+    end
+    local texto = #linhas > 0 and table.concat(linhas, "\n")
+        or "Nenhuma punicao confirmada nesta sessao."
+    sampShowDialog(_G.HZDialogSetorLogsId, "SETOR LOGS - ULTIMAS 7 PUNICOES", texto,
+        #linhas > 0 and "ABRIR" or "FECHAR", "FECHAR", #linhas > 0 and 2 or 0)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
+end
+
+function _G.HZAbrirSetorLogDetalhe(indice)
+    local item = _G.HZPunicoesSessao[tonumber(indice) or 0]
+    if not item then return _G.HZAbrirSetorLogs() end
+    _G.HZSetorLogSelecionado = tonumber(indice)
+    sampShowDialog(_G.HZDialogSetorLogDetalheId,
+        string.format("SETOR LOGS - %s (RG: %s)", item.nick, item.rg),
+        item.texto, "COPIAR", "VOLTAR", 0)
+    if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
+end
 
 function _G.HZAbrirPainelAutomacoes()
     if not _G.HZExigirStaff("/automacoes") then return false end
@@ -5661,6 +5776,7 @@ local function setor_main()
         _G.HZFecharPainelMods()
         _G.HZAbrirModsDialog()
     end)
+    sampRegisterChatCommand("setorlogs", _G.HZAbrirSetorLogs)
 
     -- Intercepta /tv diretamente porque algumas combinacoes de SA-MP/MoonLoader
     -- nao entregam comandos de servidor ao callback geral antes do envio.
@@ -5974,8 +6090,19 @@ local function setor_main()
             end
         end
 
-        if _G.HZModsJanela.v or seletorJogadorAberto.v then
-            imgui.Process = true
+        -- Fonte unica do estado de entrada do ImGui. Antes, varios pontos apenas
+        -- ligavam Process e ele podia permanecer capturando o clique esquerdo
+        -- depois do /tvoff, mesmo sem qualquer janela visivel.
+        local painelTvAberto = _G.PainelTVModule and _G.PainelTVModule.isOpen
+            and _G.PainelTVModule.isOpen()
+        local modsAberto = _G.HZModsJanela and _G.HZModsJanela.v
+        local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
+            and _G.HZMonitorPanel.aberto.v
+        if _G.HZTextDrawSelecionavelAtivo() then
+            imgui.Process = false
+        else
+            imgui.Process = painelTvAberto or modsAberto or monitorAberto
+                or seletorJogadorAberto.v
         end
 
         -- CONTROLE DE VELOCIDADE DA CÂMERA STAFF
@@ -6128,6 +6255,7 @@ end
 -- Mantido apenas para BAN, BANTEMP, CADEIA/PUNIÇÃO e MUTE.
 function enviarTudo(nick, id_ou_rg, tempo, motivo, acao, url, tipoPunicao)
     local staffLog = _G.HZNomeStaffAtual()
+    _G.HZRegistrarPunicaoSessao(staffLog, nick, id_ou_rg, tempo, motivo)
     lua_thread.create(function()
         local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
 
@@ -7258,7 +7386,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.89",
+    versao = "3.06",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7460,9 +7588,28 @@ function imgui.OnDrawFrame()
 end
 
 function onWindowMessage(msg, wparam, lparam)
+    local agoraClique = os.clock and os.clock() or 0
+    if agoraClique <= tonumber(_G.HZDiagnosticoCliqueAte or 0)
+        and (msg == 0x0201 or msg == 0x0202) then
+        local io = imgui.GetIO and imgui.GetIO() or nil
+        print(string.format(
+            "[SETOR CLICK] msg=0x%X painel=%s process=%s disable=%s show=%s wantMouse=%s tdSelect=%s sampCursor=%s",
+            tonumber(msg) or 0,
+            tostring(_G.PainelTVModule and _G.PainelTVModule.isOpen and _G.PainelTVModule.isOpen()),
+            tostring(imgui.Process), tostring(imgui.DisableInput), tostring(imgui.ShowCursor),
+            tostring(io and io.WantCaptureMouse), tostring(_G.HZTextDrawSelecionavelAtivo()),
+            tostring(type(sampIsCursorActive) == "function" and sampIsCursorActive())))
+    end
     if setor_onWindowMessage then
         local r = setor_onWindowMessage(msg, wparam, lparam)
         if r == false then return false end
+    end
+end
+
+function sampev.onSendClickTextDraw(textdrawId)
+    local agoraClique = os.clock and os.clock() or 0
+    if agoraClique <= tonumber(_G.HZDiagnosticoCliqueAte or 0) then
+        print("[SETOR CLICK RPC] textdrawId=" .. tostring(textdrawId))
     end
 end
 
@@ -7495,7 +7642,13 @@ end
 function samp.onShowDialog(id, style, title, button1, button2, text)
     local agora = os.clock and os.clock() or 0
     local aguardandoScanAte = tonumber(_G.HZScanChat and _G.HZScanChat.aguardandoAte) or 0
-    if aguardandoScanAte > 0 and agora <= aguardandoScanAte then
+    local tituloPossivelScan = tostring(title or ""):gsub("{%x%x%x%x%x%x}", ""):lower()
+    local textoPossivelScan = tostring(text or ""):gsub("{%x%x%x%x%x%x}", ""):lower()
+    local ehDialogScan = tituloPossivelScan:find("scan", 1, true)
+        or (tituloPossivelScan:find("informa", 1, true)
+            and tituloPossivelScan:find("jogador", 1, true)
+            and not textoPossivelScan:find("reportador", 1, true))
+    if aguardandoScanAte > 0 and agora <= aguardandoScanAte and ehDialogScan then
         _G.HZScanChat.aguardandoAte = 0
         local tituloLimpo = tostring(title or ""):gsub("{%x%x%x%x%x%x}", "")
         local conteudo = tostring(text or "")
@@ -7513,7 +7666,7 @@ function samp.onShowDialog(id, style, title, button1, button2, text)
             sampAddChatMessage("{FFB347}[SCAN] O servidor nao retornou detalhes.", -1)
         end
         return false
-    elseif aguardandoScanAte > 0 then
+    elseif aguardandoScanAte > 0 and agora > aguardandoScanAte then
         _G.HZScanChat.aguardandoAte = 0
     end
     if _G.HZAvisosAC and _G.HZAvisosAC.registrarDialogo then
@@ -7522,6 +7675,43 @@ function samp.onShowDialog(id, style, title, button1, button2, text)
 end
 
 function sampev.onSendDialogResponse(id, button, listboxId, input)
+    if tonumber(id) == tonumber(_G.HZDialogPunicaoCopiarId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou and type(setClipboardText) == "function" then
+            setClipboardText(tostring(_G.HZTextoPunicaoPendente or ""))
+            sampAddChatMessage("{3EDC81}[SETOR] Registro da punicao copiado.", -1)
+        elseif confirmou then
+            sampAddChatMessage("{FF5555}[SETOR] Area de transferencia indisponivel.", -1)
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogSetorLogsId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou and #_G.HZPunicoesSessao > 0 then
+            _G.HZSetorLogAbrirPendente = (tonumber(listboxId) or 0) + 1
+            lua_thread.create(function()
+                wait(100)
+                _G.HZAbrirSetorLogDetalhe(_G.HZSetorLogAbrirPendente)
+            end)
+        end
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogSetorLogDetalheId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        local item = _G.HZPunicoesSessao[tonumber(_G.HZSetorLogSelecionado) or 0]
+        if confirmou and item and type(setClipboardText) == "function" then
+            setClipboardText(item.texto)
+            sampAddChatMessage("{3EDC81}[SETOR] Registro da punicao copiado.", -1)
+        elseif confirmou then
+            sampAddChatMessage("{FF5555}[SETOR] Area de transferencia indisponivel.", -1)
+        else
+            lua_thread.create(function()
+                wait(100)
+                _G.HZAbrirSetorLogs()
+            end)
+        end
+        return false
+    end
     if tonumber(id) == tonumber(_G.HZDialogComandosId) then
         return false
     end
@@ -7835,3 +8025,4 @@ function samp.onPlayerQuit(id, reason)
     end
     if setor_onPlayerQuit then return setor_onPlayerQuit(id, reason) end
 end
+
