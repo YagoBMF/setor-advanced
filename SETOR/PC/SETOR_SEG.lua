@@ -1578,7 +1578,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("3.01")
+script_version("3.02")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -7355,7 +7355,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "3.01",
+    versao = "3.02",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7948,6 +7948,12 @@ end
 
 function sampev.onToggleSelectTextDraw(state, hovercolor)
     _G.HZServidorSelecionandoTextdraw = state == true or state == 1 or tostring(state) == "1"
+    -- Esta e a chave usada pela propria lib/imgui.lua antes de despachar e
+    -- consumir WM_LBUTTONDOWN/UP. Enquanto o servidor seleciona TextDraw,
+    -- nenhuma janela ImGui pode interceptar o clique.
+    imgui.DisableInput = _G.HZServidorSelecionandoTextdraw
+    print("[SETOR TEXTDRAW] selecao=" .. tostring(_G.HZServidorSelecionandoTextdraw)
+        .. " imgui.DisableInput=" .. tostring(imgui.DisableInput))
     if _G.HZServidorSelecionandoTextdraw then
         -- Nao chama sampToggleCursor(false): este cursor agora pertence ao
         -- proprio servidor. Apenas o ImGui deixa de receber o mouse.
