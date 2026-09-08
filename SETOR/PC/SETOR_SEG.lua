@@ -256,6 +256,7 @@ end
 -- Auto abrir painel quando começar a telar alguém
 local painelAutoAbrir = true
 local painelAbertoPorAuto = false
+_G.HZTelagemAtivaPc = _G.HZTelagemAtivaPc == true
 
 -- Controle de cursor (configuração)
 local cursorAtivo = false
@@ -1290,6 +1291,9 @@ end
 -- ======================
 local function paineltv_parse_info(text)
     paineltv_tentar_capturar_relogio(text)
+    -- Inventarios e estabelecimentos tambem usam textos como "ID: 426".
+    -- Fora de uma telagem, esses IDs nunca podem reabrir o Painel TV.
+    if not _G.HZTelagemAtivaPc then return end
     local clean = text:gsub("{%x%x%x%x%x%x}", ""):gsub("%s+", " ")
     local n = clean:match("NICK:%s*([A-Za-z0-9_]+)")
     local r = clean:match("RG:%s*(%d+)")
@@ -1487,6 +1491,8 @@ end
 local function paineltv_onPlayerTextDrawSetString(playerId, id, text) paineltv_parse_info(text) end
 
 function _G.HZPainelTVEncerrarTelagem()
+    _G.HZTelagemAtivaPc = false
+    _G.HZFilaTextdraw = {}
     idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
     ultimoIdTelado = "---"
     ultimoScanAutomaticoChave = nil
@@ -1501,12 +1507,14 @@ local function paineltv_onSendCommand(cmd)
     local cmdAc = tostring(cmd or ""):lower():match("^%s*(.-)%s*$")
     if cmdAc == "/reports" or cmdAc:match("^/reports%s+") then
         _G.HZAvisosAC.marcarReport()
-    elseif cmdAc:match("^/tv%s+") or cmdAc == "/tvz" then
+    elseif cmdAc:match("^/tv%s+") then
+        _G.HZTelagemAtivaPc = true
         -- /tv digitado, painel e navegacao pelas setas nao sao telagens de report.
         _G.HZAvisosAC.cancelarReport()
     end
 
     if cmdAc:match("^/tvoff") then
+        _G.HZTelagemAtivaPc = false
         _G.HZAvisosAC.aguardandoReport = false
         _G.HZPainelTVEncerrarTelagem()
 
@@ -1566,7 +1574,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.99")
+script_version("3.00")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -2140,6 +2148,8 @@ local function telarJogadorOnlinePelaTAB(id, nick)
         sampAddChatMessage("{FF0000}ERRO: Jogador nao esta online para telar pela TAB.", -1)
         return false
     end
+
+    _G.HZTelagemAtivaPc = true
 
     nick = nick or sampGetPlayerNickname(id) or tostring(id)
 
@@ -7334,7 +7344,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.99",
+    versao = "3.00",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
