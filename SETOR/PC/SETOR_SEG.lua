@@ -600,6 +600,15 @@ local function paineltv_main()
         -- 10 ms preserva a resposta dos atalhos e evita ocupar um ciclo inteiro
         -- da CPU a cada frame quando o painel esta fechado.
         wait(10)
+        -- A biblioteca ImGui consome WM_LBUTTON mesmo quando apenas desenha o
+        -- painel. Se o SA-MP ativou o cursor (inventario/loja/TextDraw) e esse
+        -- cursor nao pertence ao Painel TV, a entrada do ImGui fica suspensa.
+        -- A verificacao por ciclo evita o estado preso que ocorreu na 3.02.
+        local cursorSampAtivo = type(sampIsCursorActive) == "function"
+            and sampIsCursorActive()
+        local painelQuerMouse = cursorAtivo or _G.HZPainelCursorNativo == true
+        imgui.DisableInput = cursorSampAtivo and not painelQuerMouse
+
         if #(_G.HZFilaTextdraw or {}) > 0 then
             local okFilaTextdraw, erroFilaTextdraw = pcall(_G.HZProcessarFilaTextdraw)
             if not okFilaTextdraw then
@@ -1576,7 +1585,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("3.03")
+script_version("3.04")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -7346,7 +7355,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "3.03",
+    versao = "3.04",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
