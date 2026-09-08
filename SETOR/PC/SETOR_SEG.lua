@@ -1566,7 +1566,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.98")
+script_version("2.99")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -6042,9 +6042,16 @@ local function setor_main()
             end
         end
 
-        if _G.HZModsJanela.v or seletorJogadorAberto.v then
-            imgui.Process = true
-        end
+        -- Fonte unica do estado de entrada do ImGui. Antes, varios pontos apenas
+        -- ligavam Process e ele podia permanecer capturando o clique esquerdo
+        -- depois do /tvoff, mesmo sem qualquer janela visivel.
+        local painelTvAberto = _G.PainelTVModule and _G.PainelTVModule.isOpen
+            and _G.PainelTVModule.isOpen()
+        local modsAberto = _G.HZModsJanela and _G.HZModsJanela.v
+        local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
+            and _G.HZMonitorPanel.aberto.v
+        imgui.Process = painelTvAberto or modsAberto or monitorAberto
+            or seletorJogadorAberto.v
 
         -- CONTROLE DE VELOCIDADE DA CÂMERA STAFF
         if _G.HZModuloAtivo("camera_staff") and camOn then
@@ -7327,7 +7334,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.98",
+    versao = "2.99",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
