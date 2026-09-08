@@ -8,6 +8,8 @@ do
 -- integrado: script_author removido
 require "lib.moonloader"
 local imgui = require "imgui"
+-- Garante que um reload nunca herde o bloqueio de teclado/mouse da versao 3.02.
+imgui.DisableInput = false
 -- Uma unica interface compativel evita diferencas entre PCs e MoonLoaders.
 _G.HZMimguiOk, _G.HZMimgui = false, nil
 _G.HZMimguiAtivado, _G.HZMimguiRecuperado = false, false
@@ -630,11 +632,7 @@ local function paineltv_main()
             end
         end
 
-        if _G.HZServidorSelecionandoTextdraw then
-            imgui.Process = false
-        elseif janela.v then
-            imgui.Process = true
-        end
+        if janela.v then imgui.Process = true end
     end
 end
 
@@ -1578,7 +1576,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("3.02")
+script_version("3.03")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -6064,15 +6062,8 @@ local function setor_main()
         local modsAberto = _G.HZModsJanela and _G.HZModsJanela.v
         local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
             and _G.HZMonitorPanel.aberto.v
-        if _G.HZServidorSelecionandoTextdraw then
-            -- O inventario/estabelecimento fica acima de qualquer janela do
-            -- SETOR e recebe diretamente o clique esquerdo.
-            imgui.Process = false
-            imgui.ShowCursor = false
-        else
-            imgui.Process = painelTvAberto or modsAberto or monitorAberto
-                or seletorJogadorAberto.v
-        end
+        imgui.Process = painelTvAberto or modsAberto or monitorAberto
+            or seletorJogadorAberto.v
 
         -- CONTROLE DE VELOCIDADE DA CÂMERA STAFF
         if _G.HZModuloAtivo("camera_staff") and camOn then
@@ -7355,7 +7346,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "3.02",
+    versao = "3.03",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7943,25 +7934,6 @@ function sampev.onShowTextDraw(id, data)
         if _G.HZVisualRegistrarTextdrawPc then
             _G.HZVisualRegistrarTextdrawPc("global", id, data.text, data)
         end
-    end
-end
-
-function sampev.onToggleSelectTextDraw(state, hovercolor)
-    _G.HZServidorSelecionandoTextdraw = state == true or state == 1 or tostring(state) == "1"
-    -- Esta e a chave usada pela propria lib/imgui.lua antes de despachar e
-    -- consumir WM_LBUTTONDOWN/UP. Enquanto o servidor seleciona TextDraw,
-    -- nenhuma janela ImGui pode interceptar o clique.
-    imgui.DisableInput = _G.HZServidorSelecionandoTextdraw
-    print("[SETOR TEXTDRAW] selecao=" .. tostring(_G.HZServidorSelecionandoTextdraw)
-        .. " imgui.DisableInput=" .. tostring(imgui.DisableInput))
-    if _G.HZServidorSelecionandoTextdraw then
-        -- Nao chama sampToggleCursor(false): este cursor agora pertence ao
-        -- proprio servidor. Apenas o ImGui deixa de receber o mouse.
-        imgui.Process = false
-        imgui.ShowCursor = false
-        _G.HZPainelCursorNativo = false
-        _G.HZPainelCampoFoco = nil
-        _G.HZPainelCampoFocoFrames = 0
     end
 end
 
