@@ -630,7 +630,11 @@ local function paineltv_main()
             end
         end
 
-        if janela.v then imgui.Process = true end
+        if _G.HZServidorSelecionandoTextdraw then
+            imgui.Process = false
+        elseif janela.v then
+            imgui.Process = true
+        end
     end
 end
 
@@ -1574,7 +1578,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("3.00")
+script_version("3.01")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -6060,8 +6064,15 @@ local function setor_main()
         local modsAberto = _G.HZModsJanela and _G.HZModsJanela.v
         local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
             and _G.HZMonitorPanel.aberto.v
-        imgui.Process = painelTvAberto or modsAberto or monitorAberto
-            or seletorJogadorAberto.v
+        if _G.HZServidorSelecionandoTextdraw then
+            -- O inventario/estabelecimento fica acima de qualquer janela do
+            -- SETOR e recebe diretamente o clique esquerdo.
+            imgui.Process = false
+            imgui.ShowCursor = false
+        else
+            imgui.Process = painelTvAberto or modsAberto or monitorAberto
+                or seletorJogadorAberto.v
+        end
 
         -- CONTROLE DE VELOCIDADE DA CÂMERA STAFF
         if _G.HZModuloAtivo("camera_staff") and camOn then
@@ -7344,7 +7355,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "3.00",
+    versao = "3.01",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7932,6 +7943,19 @@ function sampev.onShowTextDraw(id, data)
         if _G.HZVisualRegistrarTextdrawPc then
             _G.HZVisualRegistrarTextdrawPc("global", id, data.text, data)
         end
+    end
+end
+
+function sampev.onToggleSelectTextDraw(state, hovercolor)
+    _G.HZServidorSelecionandoTextdraw = state == true or state == 1 or tostring(state) == "1"
+    if _G.HZServidorSelecionandoTextdraw then
+        -- Nao chama sampToggleCursor(false): este cursor agora pertence ao
+        -- proprio servidor. Apenas o ImGui deixa de receber o mouse.
+        imgui.Process = false
+        imgui.ShowCursor = false
+        _G.HZPainelCursorNativo = false
+        _G.HZPainelCampoFoco = nil
+        _G.HZPainelCampoFocoFrames = 0
     end
 end
 
