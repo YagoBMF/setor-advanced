@@ -264,6 +264,25 @@ local function setCursor(state)
     imgui.ShowCursor = cursorAtivo
 end
 
+-- Libera apenas os controles que foram tomados pelo Painel TV. O cursor do
+-- servidor nao e desligado quando pertence a um inventario/TextDraw selecionavel.
+function _G.HZPainelTVLiberarInterface()
+    setCursor(false)
+    if _G.HZPainelCursorNativo then
+        if type(sampToggleCursor) == "function" then sampToggleCursor(false) end
+        _G.HZPainelCursorNativo = false
+    end
+    _G.HZPainelCampoFoco = nil
+    _G.HZPainelCampoFocoFrames = 0
+
+    local modsAberto = _G.HZModsJanela and _G.HZModsJanela.v
+    local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
+        and _G.HZMonitorPanel.aberto.v
+    if not modsAberto and not monitorAberto then
+        imgui.Process = false
+    end
+end
+
 -- ======================
 -- CONFIGURAÇÕES (NOVAS)
 -- ======================
@@ -568,7 +587,7 @@ local function paineltv_main()
         janela.v = not janela.v
         menuAtual = "principal"
         aguardandoConfirmBanPerm = false
-        setCursor(false)
+        if janela.v then setCursor(false) else _G.HZPainelTVLiberarInterface() end
         painelAbertoPorAuto = false
     end
     sampRegisterChatCommand("ptv", alternarPainelTv)
@@ -591,7 +610,7 @@ local function paineltv_main()
                 janela.v = not janela.v
                 menuAtual = "principal"
                 aguardandoConfirmBanPerm = false
-                setCursor(false)
+                if janela.v then setCursor(false) else _G.HZPainelTVLiberarInterface() end
                 painelAbertoPorAuto = false
             end
             if hotkeyF7TvOff and isKeyJustPressed(vkeys.VK_F7) then
@@ -821,7 +840,7 @@ local function paineltv_OnDrawFrame()
         menuAtual = "principal"
         aguardandoConfirmBanPerm = false
         painelAbertoPorAuto = false
-        setCursor(false)
+        _G.HZPainelTVLiberarInterface()
     end
     imgui.EndChild()
 
@@ -1471,7 +1490,7 @@ function _G.HZPainelTVEncerrarTelagem()
     idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
     ultimoIdTelado = "---"
     ultimoScanAutomaticoChave = nil
-    setCursor(false)
+    _G.HZPainelTVLiberarInterface()
     aguardandoConfirmBanPerm = false
     janela.v = false
     painelAbertoPorAuto = false
@@ -1513,7 +1532,7 @@ end
             if not ativo then
                 janela.v = false
                 painelAbertoPorAuto = false
-                setCursor(false)
+                _G.HZPainelTVLiberarInterface()
             end
         end
     }
@@ -1547,7 +1566,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("2.97")
+script_version("2.98")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -7308,7 +7327,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.97",
+    versao = "2.98",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
