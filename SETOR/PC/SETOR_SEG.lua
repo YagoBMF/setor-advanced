@@ -290,7 +290,9 @@ end
 function _G.HZPainelTVLiberarInterface()
     setCursor(false)
     if _G.HZPainelCursorNativo then
-        if type(sampToggleCursor) == "function" then sampToggleCursor(false) end
+        -- O servidor pode ja ter entregue o cursor ao inventario.
+        if not _G.HZTextDrawSelecionavelAtivo()
+            and type(sampToggleCursor) == "function" then sampToggleCursor(false) end
         _G.HZPainelCursorNativo = false
     end
     _G.HZPainelCampoFoco = nil
@@ -301,6 +303,7 @@ function _G.HZPainelTVLiberarInterface()
         and _G.HZMonitorPanel.aberto.v
     if not modsAberto and not monitorAberto then
         imgui.Process = false
+        imgui.DisableInput = true
     end
 end
 
@@ -1206,6 +1209,14 @@ local function paineltv_OnDrawFrame()
                 aguardandoConfirmBanPerm = false
             end
         end
+        if comandoBase == "/mute" then
+            if hzButton(u8"DESMUTAR", V(-1, 30), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+                if podeExecutarAcao() then
+                    sampSendChat("/desmute " .. rgTelado)
+                    menuAtual = "principal"
+                end
+            end
+        end
         if hzButton(u8"VOLTAR", V(-1, 28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
             menuAtual = "categorias"
             bufMotivoManual.v = ""
@@ -1537,15 +1548,19 @@ end
 
 -- A abertura nao depende da chegada de um TextDraw com o literal "ID:".
 -- Os dados continuam vazios ate serem confirmados pelo servidor.
-function _G.HZPainelTVIniciarTelagem()
+function _G.HZPainelTVIniciarTelagem(preservarDados)
     if _G.HZModuloAtivo and not _G.HZModuloAtivo("painel_tv") then return end
     _G.HZTelagemAtivaPc = true
-    idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
-    ultimoIdTelado = "---"
-    ultimoScanAutomaticoChave = nil
-    _G.HZVisualTextdrawAtual = {id=nil, nick=nil}
-    menuAtual = "principal"
-    aguardandoConfirmBanPerm = false
+    -- A confirmacao pode chegar depois dos TextDraws ou se repetir.
+    -- Somente uma nova solicitacao limpa os dados do alvo anterior.
+    if not preservarDados then
+        idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
+        ultimoIdTelado = "---"
+        ultimoScanAutomaticoChave = nil
+        _G.HZVisualTextdrawAtual = {id=nil, nick=nil}
+        menuAtual = "principal"
+        aguardandoConfirmBanPerm = false
+    end
     if painelAutoAbrir then
         janela.v = true
         painelAbertoPorAuto = true
@@ -3837,10 +3852,8 @@ function _G.HZPrepararTeclasSeletor()
     seletorPressEsc = false
     -- So aceita um novo Enter depois que o Enter usado para enviar o
     -- comando no chat for completamente solto.
-    _G.HZSeletorEnterLiberado = false
-    -- O ImGui tambem pode interpretar a liberacao desse Enter como ativacao
-    -- do primeiro botao. Durante esta janela curta nenhuma opcao executa.
-    _G.HZSeletorPodeSelecionarApos = (os.clock and os.clock() or 0) + 0.60
+    _G.HZSeletorEnterLiberado = not isKeyDown(VK_RETURN_SELETOR)
+    _G.HZSeletorPodeSelecionarApos = 0
 end
 
 local function fecharSeletorJogador()
@@ -3896,10 +3909,9 @@ local function setor_onWindowMessage(msg, wparam, lparam)
                 if wparam == VK_UP then seletorPressUp = true end
                 if wparam == VK_DOWN then seletorPressDown = true end
                 if wparam == VK_RETURN_SELETOR then
-                    local agoraEnter = os.clock and os.clock() or 0
-                    if _G.HZSeletorEnterLiberado == true
-                        and agoraEnter >= tonumber(_G.HZSeletorPodeSelecionarApos or 0) then
+                    if _G.HZSeletorEnterLiberado == true then
                         seletorPressEnter = true
+                        _G.HZSeletorEnterLiberado = false
                     end
                 end
                 if wparam == VK_ESCAPE_SELETOR then seletorPressEsc = true end
@@ -4500,8 +4512,8 @@ end
 
 function _G.HZAbrirTextoPunicao(texto)
     _G.HZTextoPunicaoPendente = tostring(texto or "")
-    sampShowDialog(_G.HZDialogPunicaoCopiarId, "SETOR - REGISTRO DA PUNICAO",
-        "Registro pronto para copiar.", "COPIAR", "FECHAR", 0)
+    sampShowDialog(_G.HZDialogPunicaoCopiarId, "REGISTRO DA PUNICAO",
+        "{FFCC33}Nao deixe para depois...{FFFFFF} Copie o registro e publique as provas desta punicao", "COPIAR", "FECHAR", 0)
     if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
 end
 
@@ -5394,7 +5406,7 @@ local function uiPlayerButton(label, selected)
 
     local clicked = imgui.Button(label, imgui.ImVec2(405, 32))
     uiPopColor(pushed)
-    return "Desconhecido"
+    return clicked
 end
 
 
@@ -5681,7 +5693,7 @@ local function setor_OnDrawFrame()
             uiTextColor(UI_HZ.danger, "Nenhuma opcao disponivel.")
         else
             uiTextColor(UI_HZ.primary2, "RESULTADOS ENCONTRADOS: " .. tostring(total))
-            uiTextColor(UI_HZ.muted, "Use [UP/DOWN] navegar  |  [ENTER] selecionar  |  [ESC] cancelar")
+            uiTextColor(UI_HZ.muted, "[CLIQUE / ENTER] selecionar  |  [SETAS] navegar  |  [ESC] sair")
             imgui.Separator()
 
             -- Lista com rolagem própria. Quando navegar pelas setas, a janela acompanha o item selecionado.
@@ -5702,11 +5714,15 @@ local function setor_OnDrawFrame()
 
                 -- O retorno do Button tambem pode ser ativado pelo Enter usado
                 -- no chat. Desenha o item, mas aceita apenas clique fisico.
-                uiPlayerButton(label, selected)
+                local botaoAcionado = uiPlayerButton(label, selected)
                 local clicouOpcao = false
                 if type(imgui.IsItemClicked) == "function" then
                     local okClique, valorClique = pcall(imgui.IsItemClicked, 0)
                     clicouOpcao = okClique and valorClique == true
+                end
+                if not clicouOpcao and botaoAcionado == true
+                    and type(imgui.IsMouseReleased) == "function" then
+                    clicouOpcao = imgui.IsMouseReleased(0) == true
                 end
                 -- Clique fisico pode executar imediatamente. A protecao de
                 -- abertura permanece somente para o Enter do chat.
@@ -6121,10 +6137,13 @@ local function setor_main()
         local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
             and _G.HZMonitorPanel.aberto.v
         if _G.HZTextDrawSelecionavelAtivo() then
+            imgui.DisableInput = true
             imgui.Process = false
+            imgui.ShowCursor = false
         else
             imgui.Process = painelTvAberto or modsAberto or monitorAberto
                 or seletorJogadorAberto.v
+            imgui.DisableInput = not imgui.Process
         end
 
         -- CONTROLE DE VELOCIDADE DA CÂMERA STAFF
@@ -6671,6 +6690,10 @@ local function setor_onSendCommand(cmd)
     end
 
     -- COMANDOS ESPECÍFICOS DO SETOR SEGURANÇA
+    -- Normaliza apenas o verbo; preserva RG, tempo e motivo original.
+    cmd = tostring(cmd or ""):gsub("^%s*/(%S+)", function(verbo)
+        return "/" .. verbo:lower()
+    end)
     if cmd:find("^/ban%s+(%d+)%s+(.+)") then
         local rg, motivo = cmd:match("^/ban%s+(%d+)%s+(.+)")
         v_rg, v_tempo, v_motivo, v_tipo = rg, "Permanente", motivo, "BAN"
@@ -7070,7 +7093,10 @@ local function setor_onServerMessage(color, text)
                 _G.HZNickEsperadoPunicao = ""
                 return
             end
-            local nick = cleanText:match("[Jj]ogador%(a%)%s+([%a%d_]+)")
+            local rgConfirmadoMute = textoLower:match("voce mutou o%(a%) jogador%(a%) de rg%s+(%d+)%s+por")
+            local nick = (rgConfirmadoMute and (tostring(_G.HZNickEsperadoPunicao or "") ~= ""
+                    and tostring(_G.HZNickEsperadoPunicao) or tostring(getInfoRG(v_rg) or "Desconhecido")))
+                or cleanText:match("[Jj]ogador%(a%)%s+([%a%d_]+)")
                 or cleanText:match("[Jj]ogador%s+([%a%d_]+)")
                 or cleanText:match("[Pp]layer%s+([%a%d_]+)")
                 or cleanText:match("([%a%d_]+)%s*%[" .. tostring(v_rg) .. "%]")
@@ -7084,7 +7110,9 @@ local function setor_onServerMessage(color, text)
             local confirmaNick = tostring(_G.HZNickEsperadoPunicao or "") == ""
                 or (nick and nick:lower() == tostring(_G.HZNickEsperadoPunicao):lower())
             local confirmouAlvo = v_tipo == "MUTE"
-                and confirmaMute and confirmaNick
+                and confirmaMute and (rgConfirmadoMute
+                    and tostring(rgConfirmadoMute) == tostring(v_rg)
+                    or (not rgConfirmadoMute and confirmaNick))
                 or (v_tipo ~= "MUTE")
 
             local confirmouMensagem = v_tipo == "MUTE" and confirmaMute
@@ -7408,7 +7436,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "3.06",
+    versao = "3.07",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7628,6 +7656,19 @@ function onWindowMessage(msg, wparam, lparam)
     end
 end
 
+-- O RPC precede o primeiro clique do inventario: suspende a captura
+-- imediatamente, sem cancelar a selecao nem alterar o cursor do servidor.
+function sampev.onToggleSelectTextDraw(state, hovercolor)
+    if state == true or state == 1 then
+        imgui.DisableInput = true
+        imgui.Process = false
+        imgui.ShowCursor = false
+        _G.HZPainelCursorNativo = false
+        _G.HZPainelCampoFoco = nil
+        _G.HZPainelCampoFocoFrames = 0
+    end
+end
+
 function sampev.onSendClickTextDraw(textdrawId)
     local agoraClique = os.clock and os.clock() or 0
     if agoraClique <= tonumber(_G.HZDiagnosticoCliqueAte or 0) then
@@ -7650,6 +7691,28 @@ function main()
     setor_main()
 end
 
+-- O clique direto na TAB nao passa por /tv nem pelo seletor do mod.
+-- Apenas prepara o painel; o clique original continua para o servidor.
+-- Confirma a telagem pelo servidor, inclusive cliques de outros mods de TAB.
+function samp.onSpectatePlayer(playerId, camType)
+    _G.HZPainelTVIniciarTelagem(true)
+end
+
+function samp.onSpectateVehicle(vehicleId, camType)
+    _G.HZPainelTVIniciarTelagem(true)
+end
+
+function samp.onTogglePlayerSpectating(state)
+    if state == false or state == 0 then
+        _G.HZPainelTVEncerrarTelagem()
+    end
+end
+
+function samp.onSendClickPlayer(playerId, source)
+    if not _G.HZModuloAtivo("painel_tv") then return end
+    _G.HZPainelTVIniciarTelagem()
+end
+
 function samp.onSendCommand(cmd)
     local r1
     if setor_onSendCommand then r1 = setor_onSendCommand(cmd) end
@@ -7662,6 +7725,8 @@ function samp.onSendCommand(cmd)
 end
 
 function samp.onShowDialog(id, style, title, button1, button2, text)
+    _G.HZDialogServidorSequencia = (_G.HZDialogServidorSequencia or 0) + 1
+    local sequenciaDialogo = _G.HZDialogServidorSequencia
     local agora = os.clock and os.clock() or 0
     local aguardandoScanAte = tonumber(_G.HZScanChat and _G.HZScanChat.aguardandoAte) or 0
     local tituloPossivelScan = tostring(title or ""):gsub("{%x%x%x%x%x%x}", ""):lower()
@@ -7687,6 +7752,14 @@ function samp.onShowDialog(id, style, title, button1, button2, text)
         if not adicionouLinha then
             sampAddChatMessage("{FFB347}[SCAN] O servidor nao retornou detalhes.", -1)
         end
+        -- Ocultar nao fecha o dialogo no servidor. Responde CANCELAR fora
+        -- do callback de rede, sem responder a um dialogo mais recente.
+        lua_thread.create(function()
+            wait(0)
+            if _G.HZDialogServidorSequencia == sequenciaDialogo then
+                sampSendDialogResponse(id, 0, -1, "")
+            end
+        end)
         return false
     elseif aguardandoScanAte > 0 and agora > aguardandoScanAte then
         _G.HZScanChat.aguardandoAte = 0
