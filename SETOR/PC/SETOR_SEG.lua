@@ -4546,7 +4546,7 @@ function _G.HZAbrirSetorLogDetalhe(indice)
     if not item then return _G.HZAbrirSetorLogs() end
     _G.HZSetorLogSelecionado = tonumber(indice)
     sampShowDialog(_G.HZDialogSetorLogDetalheId,
-        string.format("SETOR LOGS - %s (RG: %s)", item.nick, item.rg),
+        string.format("SETOR LOGS", item.nick),
         item.texto, "COPIAR", "VOLTAR", 0)
     if type(sampSetDialogClientside) == "function" then sampSetDialogClientside(false) end
 end
