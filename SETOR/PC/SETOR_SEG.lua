@@ -22,6 +22,24 @@ local sampev = require "lib.samp.events"
 local ffi = require "ffi"
 local ICON_GEAR = "\226\154\153" -- ⚙ em UTF-8 (evita bug de encoding)
 
+-- Estado real da selecao de TextDraw no SA-MP desta instalacao. A biblioteca
+-- escolhe automaticamente entre 0.3.7 R1/R3/R5.
+_G.HZTextDrawSelectionApi = nil
+pcall(function()
+    local sampapi = require "sampapi"
+    _G.HZTextDrawSelectionApi = sampapi.require("CTextDrawSelection", true)
+end)
+
+function _G.HZTextDrawSelecionavelAtivo()
+    if not _G.HZTextDrawSelectionApi then return false end
+    local ok, ativo = pcall(function()
+        local selecao = _G.HZTextDrawSelectionApi.RefTextDrawSelection()
+        return selecao ~= nil and selecao ~= ffi.NULL
+            and tonumber(selecao.m_bIsActive) ~= 0
+    end)
+    return ok and ativo == true
+end
+
 -- >>> (Hotkeys) <<<
 local vkeys = require "vkeys"
 
@@ -569,6 +587,9 @@ local function paineltv_main()
 
     carregarPosPainelTv()
     carregarPreferenciasPainelTv()
+    -- Inicia com a mesma limpeza de interface usada ao desligar o modulo.
+    -- As preferencias salvas continuam controlando a abertura ao telar.
+    _G.HZPainelTVEncerrarTelagem()
 
     -- Ativar/desativar cursor manualmente. /kj permanece como alias legado.
     local function alternarCursorPainel()
@@ -604,10 +625,7 @@ local function paineltv_main()
         -- painel. Se o SA-MP ativou o cursor (inventario/loja/TextDraw) e esse
         -- cursor nao pertence ao Painel TV, a entrada do ImGui fica suspensa.
         -- A verificacao por ciclo evita o estado preso que ocorreu na 3.02.
-        local cursorSampAtivo = type(sampIsCursorActive) == "function"
-            and sampIsCursorActive()
-        local painelQuerMouse = cursorAtivo or _G.HZPainelCursorNativo == true
-        imgui.DisableInput = cursorSampAtivo and not painelQuerMouse
+        -- O loop principal do SETOR aplica o estado de exibicao do ImGui.
 
         if #(_G.HZFilaTextdraw or {}) > 0 then
             local okFilaTextdraw, erroFilaTextdraw = pcall(_G.HZProcessarFilaTextdraw)
@@ -641,7 +659,6 @@ local function paineltv_main()
             end
         end
 
-        if janela.v then imgui.Process = true end
     end
 end
 
@@ -1504,6 +1521,10 @@ local function paineltv_onPlayerTextDrawSetString(playerId, id, text) paineltv_p
 function _G.HZPainelTVEncerrarTelagem()
     _G.HZTelagemAtivaPc = false
     _G.HZFilaTextdraw = {}
+    -- Durante dois minutos registra somente o caminho dos cliques, sem
+    -- consumir ou modificar nenhuma entrada. Facilita diagnosticar o estado
+    -- residual imediatamente depois de sair da telagem.
+    _G.HZDiagnosticoCliqueAte = (os.clock and os.clock() or 0) + 120
     idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
     ultimoIdTelado = "---"
     ultimoScanAutomaticoChave = nil
@@ -1514,12 +1535,30 @@ function _G.HZPainelTVEncerrarTelagem()
     menuAtual = "principal"
 end
 
+-- A abertura nao depende da chegada de um TextDraw com o literal "ID:".
+-- Os dados continuam vazios ate serem confirmados pelo servidor.
+function _G.HZPainelTVIniciarTelagem()
+    if _G.HZModuloAtivo and not _G.HZModuloAtivo("painel_tv") then return end
+    _G.HZTelagemAtivaPc = true
+    idTelado, rgTelado, nickTelado, levelTelado = "---", "---", "---", "---"
+    ultimoIdTelado = "---"
+    ultimoScanAutomaticoChave = nil
+    _G.HZVisualTextdrawAtual = {id=nil, nick=nil}
+    menuAtual = "principal"
+    aguardandoConfirmBanPerm = false
+    if painelAutoAbrir then
+        janela.v = true
+        painelAbertoPorAuto = true
+        setCursor(false)
+    end
+end
+
 local function paineltv_onSendCommand(cmd)
     local cmdAc = tostring(cmd or ""):lower():match("^%s*(.-)%s*$")
     if cmdAc == "/reports" or cmdAc:match("^/reports%s+") then
         _G.HZAvisosAC.marcarReport()
     elseif cmdAc:match("^/tv%s+") then
-        _G.HZTelagemAtivaPc = true
+        _G.HZPainelTVIniciarTelagem()
         -- /tv digitado, painel e navegacao pelas setas nao sao telagens de report.
         _G.HZAvisosAC.cancelarReport()
     end
@@ -1585,7 +1624,7 @@ local json = require "dkjson"
 
 script_name("Suporte")
 script_author("Nathan")
-script_version("3.04")
+script_version("3.06")
 
 -- ============================================================
 -- WEBHOOKS CONSOLIDADOS (SETOR SEGURANÇA)
@@ -2160,7 +2199,7 @@ local function telarJogadorOnlinePelaTAB(id, nick)
         return false
     end
 
-    _G.HZTelagemAtivaPc = true
+    _G.HZPainelTVIniciarTelagem()
 
     nick = nick or sampGetPlayerNickname(id) or tostring(id)
 
@@ -5522,6 +5561,7 @@ function _G.HZMonitorPanel.desenhar()
 
             if idOnline then
                 if imgui.Button("TV##mon_tv_" .. i, imgui.ImVec2(_G.HZTamanhoMods(85), _G.HZTamanhoMods(28))) then
+                    _G.HZPainelTVIniciarTelagem()
                     sampSendChat("/tv " .. rg)
                     -- Ao iniciar a telagem pela lista /ss, fecha a lista para
                     -- deixar a tela livre para o Painel TV.
@@ -5764,6 +5804,15 @@ local function setor_main()
             return
         end
 
+        -- sampSendChat pode nao passar pelo callback onSendCommand.
+        -- Marca a telagem antes do envio para aceitar os primeiros TextDraws.
+        local function enviarTv(comando)
+            if _G.PainelTVModule and _G.PainelTVModule.onSendCommand then
+                _G.PainelTVModule.onSendCommand(comando)
+            end
+            sampSendChat(comando)
+        end
+
         local alvoTvDireto = tostring(arg or ""):match("^%s*(.-)%s*$")
         if alvoTvDireto == "" then
             sampSendChat("/tv")
@@ -5771,14 +5820,14 @@ local function setor_main()
         end
 
         if alvoTvDireto:match("^%d+$") then
-            sampSendChat("/tv " .. alvoTvDireto)
+            enviarTv("/tv " .. alvoTvDireto)
             return
         end
 
         local resolvidoTvDireto =
             resolverPrimeiroArgumentoComoRG("/tv " .. alvoTvDireto)
         if type(resolvidoTvDireto) == "string" then
-            sampSendChat(resolvidoTvDireto)
+            enviarTv(resolvidoTvDireto)
         elseif resolvidoTvDireto ~= false then
             sampAddChatMessage(
                 "{FF0000}ERRO: Nao foi possivel localizar o jogador online.",
@@ -6071,8 +6120,12 @@ local function setor_main()
         local modsAberto = _G.HZModsJanela and _G.HZModsJanela.v
         local monitorAberto = _G.HZMonitorPanel and _G.HZMonitorPanel.aberto
             and _G.HZMonitorPanel.aberto.v
-        imgui.Process = painelTvAberto or modsAberto or monitorAberto
-            or seletorJogadorAberto.v
+        if _G.HZTextDrawSelecionavelAtivo() then
+            imgui.Process = false
+        else
+            imgui.Process = painelTvAberto or modsAberto or monitorAberto
+                or seletorJogadorAberto.v
+        end
 
         -- CONTROLE DE VELOCIDADE DA CÂMERA STAFF
         if _G.HZModuloAtivo("camera_staff") and camOn then
@@ -7355,7 +7408,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "3.04",
+    versao = "3.06",
     apiVersao = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/versao.txt?ref=main",
     apiScript = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_SEG.lua?ref=main",
     apiBootstrap = "https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/PC/SETOR_UPDATER.lua?ref=main",
@@ -7557,9 +7610,28 @@ function imgui.OnDrawFrame()
 end
 
 function onWindowMessage(msg, wparam, lparam)
+    local agoraClique = os.clock and os.clock() or 0
+    if agoraClique <= tonumber(_G.HZDiagnosticoCliqueAte or 0)
+        and (msg == 0x0201 or msg == 0x0202) then
+        local io = imgui.GetIO and imgui.GetIO() or nil
+        print(string.format(
+            "[SETOR CLICK] msg=0x%X painel=%s process=%s disable=%s show=%s wantMouse=%s tdSelect=%s sampCursor=%s",
+            tonumber(msg) or 0,
+            tostring(_G.PainelTVModule and _G.PainelTVModule.isOpen and _G.PainelTVModule.isOpen()),
+            tostring(imgui.Process), tostring(imgui.DisableInput), tostring(imgui.ShowCursor),
+            tostring(io and io.WantCaptureMouse), tostring(_G.HZTextDrawSelecionavelAtivo()),
+            tostring(type(sampIsCursorActive) == "function" and sampIsCursorActive())))
+    end
     if setor_onWindowMessage then
         local r = setor_onWindowMessage(msg, wparam, lparam)
         if r == false then return false end
+    end
+end
+
+function sampev.onSendClickTextDraw(textdrawId)
+    local agoraClique = os.clock and os.clock() or 0
+    if agoraClique <= tonumber(_G.HZDiagnosticoCliqueAte or 0) then
+        print("[SETOR CLICK RPC] textdrawId=" .. tostring(textdrawId))
     end
 end
 
