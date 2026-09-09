@@ -1,6 +1,6 @@
 script_name('HZ Atendimento IA')
 script_author('HZ')
-script_version('2.0.1')
+script_version('2.0.2')
 
 require 'moonloader'
 local sampev = require 'lib.samp.events'
@@ -33,6 +33,13 @@ local notice_opened_at = 0
 local notice_item = nil
 local support_target_name = nil
 local support_target_rg = nil
+local support_started_at = 0
+local support_player_has_message = false
+local support_autoclose_active = false
+local support_autoclose_step = 0
+local support_autoclose_next = 0
+local ignored_staff_echoes = {}
+local SUPPORT_IDLE_SECONDS = 60
 local DIALOG_APPROVE, DIALOG_OPTIONS, DIALOG_TEACH = 31941, 31942, 31943
 local bridge_online = false
 local download_busy = false
@@ -71,6 +78,72 @@ end
 local function sanitize_game_text(value)
     local clean = tostring(value or ''):gsub('[^%w%s%.,%!%?/%-]', ' '):gsub('%s+', ' '):match('^%s*(.-)%s*$')
     return clean:sub(1, 85):match('^%s*(.-)%s*$')
+end
+
+local function reset_support_autoclose()
+    support_started_at = 0
+    support_player_has_message = false
+    support_autoclose_active = false
+    support_autoclose_step = 0
+    support_autoclose_next = 0
+end
+
+local function ignore_next_staff_echo(message)
+    ignored_staff_echoes[tostring(message or ''):lower():gsub('%s+', ' ')] = os.clock() + 15
+end
+
+local function consume_ignored_staff_echo(message)
+    local key = tostring(message or ''):lower():gsub('%s+', ' ')
+    local expires = ignored_staff_echoes[key]
+    if not expires then return false end
+    ignored_staff_echoes[key] = nil
+    return expires >= os.clock()
+end
+
+local function cancel_support_autoclose(send_greeting)
+    local was_active = support_autoclose_active
+    support_autoclose_active = false
+    support_autoclose_step = 0
+    support_autoclose_next = 0
+    support_player_has_message = true
+    if send_greeting and was_active then
+        local greeting = 'Ola, voce solicitou atendimento. Como posso te ajudar?'
+        sampSendChat(greeting)
+        table.insert(incoming, {type = 'support_staff_message', player = STAFF_ID, role = STAFF_ROLE, message = greeting})
+        sampAddChatMessage('[HZ IA] Finalizacao automatica cancelada: jogador respondeu.', 0x62E6A7)
+    end
+end
+
+local function process_support_autoclose()
+    if not support_target_name or support_player_has_message then return end
+    local now = os.clock()
+    if not support_autoclose_active then
+        if support_started_at <= 0 or now - support_started_at < SUPPORT_IDLE_SECONDS then return end
+        support_autoclose_active = true
+        support_autoclose_step = 1
+        support_autoclose_next = now
+    end
+    if now < support_autoclose_next then return end
+    local actions = {
+        {text = 'Percebi que voce nao esta ativo no momento.', delay = 2.0},
+        {text = 'O atendimento sera finalizado. Caso precise de ajuda,', delay = 2.0},
+        {text = 'abra um novo atendimento.', delay = 2.0},
+        {text = 'Finalizando em 3...', delay = 1.0},
+        {text = '2...', delay = 1.0},
+        {text = '1...', delay = 1.0},
+        {command = '/fa', delay = 0}
+    }
+    local action = actions[support_autoclose_step]
+    if not action then return end
+    if action.command then
+        sampSendChat(action.command)
+        reset_support_autoclose()
+        return
+    end
+    ignore_next_staff_echo(action.text)
+    sampSendChat(action.text)
+    support_autoclose_step = support_autoclose_step + 1
+    support_autoclose_next = now + action.delay
 end
 
 local function queue_dialog(item)
@@ -337,6 +410,7 @@ function sampev.onServerMessage(color, text)
         clear_old_support(true)
         support_target_name = nil
         support_target_rg = nil
+        reset_support_autoclose()
         table.insert(incoming, {type = 'support_finish_from_lua', player = 'staff'})
         sampAddChatMessage('[HZ IA] Atendimento removido do painel.', 0x62E6A7)
     end
@@ -357,11 +431,17 @@ function sampev.onServerMessage(color, text)
         clear_old_support()
         support_target_name = support_player:lower():gsub('%s+', '')
         support_target_rg = support_rg
+        support_started_at = os.clock()
+        support_player_has_message = false
+        support_autoclose_active = false
+        support_autoclose_step = 0
+        support_autoclose_next = 0
         table.insert(incoming, {type = 'support_start', player = support_player, rg = support_rg})
         sampAddChatMessage('[HZ IA] Atendimento conectado ao painel.', 0x38D8E8)
     end
     local chat_player, message = clean:match('^Chat%-Suporte:%s+Jogador%(a%)%s+([^:]+):%s+(.+)$')
     if chat_player and message then
+        cancel_support_autoclose(true)
         table.insert(incoming, {type = 'support_message', player = chat_player, rg = support_target_rg, message = message})
         sampAddChatMessage('[HZ IA] Analisando o contexto do atendimento.', 0x38D8E8)
     end
@@ -369,7 +449,7 @@ function sampev.onServerMessage(color, text)
     if role_label and staff_name and staff_message and role_label ~= 'Jogador(a)' then
         local role = role_label:gsub('%(a%)', ''):lower()
         local allowed_roles = {ajudante = true, moderador = true, administrador = true, coordenador = true, diretor = true, owner = true, onwer = true}
-        if allowed_roles[role] then
+        if allowed_roles[role] and not consume_ignored_staff_echo(staff_message) then
             local normalized_name = staff_name:lower():gsub('%s+', '')
             if support_target_name and normalized_name == support_target_name then
                 table.insert(incoming, {type = 'support_message', player = staff_name, rg = support_target_rg, role = role_label, message = staff_message})
@@ -502,6 +582,7 @@ function main()
         wait(100)
         finish_download()
         recover_stale_dialog()
+        process_support_autoclose()
         show_pending_dialog()
         show_next_dialog()
         if notice_visible and notice_opened_at > 0 and os.clock() - notice_opened_at >= 60.0 then close_notice(false) end
