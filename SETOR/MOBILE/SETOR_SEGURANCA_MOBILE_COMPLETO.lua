@@ -10,7 +10,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '4.22'
+local VERSION = '4.23'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -540,8 +540,8 @@ end
 
 function _G.HZMobileAbrirTextoPunicao(texto)
     _G.HZMobileTextoPunicaoPendente = tostring(texto or '')
-    sampShowDialog(_G.HZMobileDialogPunicaoCopiar, 'SETOR - REGISTRO DA PUNICAO',
-        'Registro pronto para copiar.', 'COPIAR', 'FECHAR', 0)
+    sampShowDialog(_G.HZMobileDialogPunicaoCopiar, 'REGISTRO DA PUNICAO',
+        '{FFCC33}Nao deixe para depois...{FFFFFF} Copie o registro e publique as provas desta punicao', 'COPIAR', 'FECHAR', 0)
     if type(sampSetDialogClientside) == 'function' then sampSetDialogClientside(false) end
 end
 
@@ -2145,6 +2145,9 @@ local function abrirTabelaPunicoes(tipo)
             linhas[i] = item[1]
         end
     end
+    if tipo == 'mute' then
+        linhas[#linhas + 1] = '{3EDC81}DESMUTAR'
+    end
     local titulos = {
         cadeia='CADEIA', ban_permanente='BAN PERMANENTE',
         ban_temporario='BAN TEMPORARIO', mute='MUTE', kick='KICK'
@@ -2935,6 +2938,17 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             sampSendChat('/desmutevoip ' .. tostring(rgAtual))
         end
     elseif dialogId == D_TABELA_PUNICAO then
+        if _G.HZMobileTipoTabelaPunicao == 'mute'
+            and listboxId == #(_G.HZMobileListaTabelaPunicao or {}) then
+            if not staffLogada or not moduloAtivo('painel_tv') then
+                chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.')
+            elseif not rgAtual or not tostring(rgAtual):match('^%d+$') then
+                chat('{FFFF00}', 'Aguarde o RG do jogador telado aparecer.')
+            else
+                sampSendChat('/desmute ' .. tostring(rgAtual))
+            end
+            return false
+        end
         punicaoTabelaSelecionada = (_G.HZMobileListaTabelaPunicao or {})[listboxId + 1]
         if punicaoTabelaSelecionada then
             if rgAtual and tostring(rgAtual):match('^%d+$') then
