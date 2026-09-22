@@ -917,7 +917,7 @@ local function enviarAvisoTelagemReport(nick, rg)
         ultimoAvisoReport, ultimoAvisoReportEm = chave, agora
         lua_thread.create(function()
             wait(350)
-            sampSendChat('/ac Estou telando o Player ' .. nick)
+            -- Aviso de telagem desativado.
         end)
     end
     aguardandoReport, reportAte = false, 0
@@ -1893,6 +1893,16 @@ end
 local function capturarHorarioServidor(texto)
     texto = clean(texto):gsub('_', ' '):gsub('%s+', ' ')
     local baixo = texto:lower()
+    -- O novo cabecalho usa REP; o ID continua sendo resolvido pelo nick online.
+    local nickCabecalho = texto:match('NICK:%s*([%w_]+)')
+    local rgCabecalho = texto:match('RG:%s*(%d+)')
+    if painelTvFlutuante and nickCabecalho then
+        if tostring(nickAtual or ''):lower() ~= nickCabecalho:lower() then
+            rgAtual, levelAtualConfirmado = nil, nil
+        end
+        nickAtual = nickCabecalho
+        if rgCabecalho then rgAtual = rgCabecalho end
+    end
     local vidaTd = texto:match('[Vv][Ii][Dd][Aa][:%s]+([%d%.]+)')
     local coleteTd = texto:match('[Cc][Oo][Ll][Ee][Tt][Ee][:%s]+([%d%.]+)')
     local capaceteTd = texto:match('[Cc][Aa][Pp][Aa][Cc][Ee][Tt][Ee][:%s]+([%d%.]+)')
@@ -2965,7 +2975,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             dialogAction = nil
         elseif type(dialogAction) == 'table' then
             if dialogAction.tipo == 'tabela' then
-                sampSendChat('/punicao ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+                _G.HZMobileEnviarPunicao('/punicao ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
             elseif dialogAction.tipo == 'tabela_ban_permanente' then
                 if tostring(dialogAction.motivo):lower() == 'nick improprio' then
                     if not dialogAction.confirmacaoNick then
@@ -2981,17 +2991,17 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
                     lua_thread.create(function()
                         sampSendChat('/kick ' .. rgNick .. ' Nick improprio')
                         wait(500)
-                        sampSendChat('/ban ' .. rgNick .. ' Nick improprio')
+                        _G.HZMobileEnviarPunicao('/ban ' .. rgNick .. ' Nick improprio')
                         wait(500)
                         sampSendChat('/lc 1')
                     end)
                 else
-                    sampSendChat('/ban ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
+                    _G.HZMobileEnviarPunicao('/ban ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
                 end
             elseif dialogAction.tipo == 'tabela_ban_temporario' then
-                sampSendChat('/bantemp ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+                _G.HZMobileEnviarPunicao('/bantemp ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
             elseif dialogAction.tipo == 'tabela_mute' then
-                sampSendChat('/mute ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+                _G.HZMobileEnviarPunicao('/mute ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
             elseif dialogAction.tipo == 'tabela_kick' then
                 sampSendChat('/kick ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
             end
@@ -3069,6 +3079,26 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if monitorados[rg] then monitorados[rg] = nil salvarTabela(MONITOR_FILE, monitorados) chat('{3EDC81}', 'RG ' .. rg .. ' removido.') else chat('{FFFF00}', 'RG nao monitorado.') end
     end
     return false
+end
+
+function _G.HZMobilePrepararPunicao(command)
+    command = tostring(command or ''):gsub('^%s*/(%S+)', function(v) return '/' .. v:lower() end)
+    local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
+    if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
+    local tempo
+    rg, tempo, motivo = command:match('^/bantemp%s+(%d+)%s+(%d+)%s+(.+)')
+    if rg then pendente = {rg=rg, tempo=tempo .. ' dias', motivo=motivo, tipo='BAN'} return end
+    rg, tempo, motivo = command:match('^/cadeia%s+(%d+)%s+(%d+)%s+(.+)')
+    if not rg then rg, tempo, motivo = command:match('^/punicao%s+(%d+)%s+(%d+)%s+(.+)') end
+    if rg then pendente = {rg=rg, tempo=tempo .. ' minutos', motivo=motivo, tipo='CADEIA'} return end
+    rg, tempo, motivo = command:match('^/mute%s+(%d+)%s+(%d+)%s+(.+)')
+    if rg then pendente = {rg=rg, tempo=tempo .. ' dias', motivo=motivo, tipo='MUTE'} return end
+
+end
+
+function _G.HZMobileEnviarPunicao(command)
+    _G.HZMobilePrepararPunicao(command)
+    sampSendChat(command)
 end
 
 function samp.onSendCommand(command)
@@ -3162,21 +3192,12 @@ function samp.onSendCommand(command)
         lua_thread.create(function()
             wait(5000)
             if staffLogada then
-                sampSendChat('/ac Respondi a duvida do Player ' .. tostring(nomeDuvida))
+                -- Aviso de resposta a duvida desativado.
             end
         end)
     end
 
-    local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
-    if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
-    local tempo
-    rg, tempo, motivo = command:match('^/bantemp%s+(%d+)%s+(%d+)%s+(.+)')
-    if rg then pendente = {rg=rg, tempo=tempo .. ' dias', motivo=motivo, tipo='BAN'} return end
-    rg, tempo, motivo = command:match('^/cadeia%s+(%d+)%s+(%d+)%s+(.+)')
-    if not rg then rg, tempo, motivo = command:match('^/punicao%s+(%d+)%s+(%d+)%s+(.+)') end
-    if rg then pendente = {rg=rg, tempo=tempo .. ' minutos', motivo=motivo, tipo='CADEIA'} return end
-    rg, tempo, motivo = command:match('^/mute%s+(%d+)%s+(%d+)%s+(.+)')
-    if rg then pendente = {rg=rg, tempo=tempo .. ' dias', motivo=motivo, tipo='MUTE'} return end
+    _G.HZMobilePrepararPunicao(command)
 
     local comandos = { ir='IR', trazer='TRAZER', reviver='REVIVER', congelar='CONGELAR', descongelar='DESCONGELAR', prenderarmas='PRENDERARMAS' }
     local cmd, alvo = command:match('^/(%S+)%s+(%d+)%s*$')
@@ -3207,6 +3228,14 @@ function samp.onServerMessage(color, text)
     if not nomeAtendimento then
         nomeAtendimento, rgAtendimento =
             ct:match('[Aa]tendendo.-jogador.-([%w_]+)%s*%[(%d+)%]')
+    end
+    if not nomeAtendimento then
+        nomeAtendimento, rgAtendimento = ct:match('[Aa]tendendo%s+([%w_]+)%s*%[(%d+)%]')
+    end
+    local staffAtendimento = ct:match('([%w_]+)%s+est[^%s]*%s+atendendo%s+')
+    if staffAtendimento and staffAtendimento:lower() ~= 'voce'
+        and staffAtendimento:lower() ~= tostring(cfg.dados.nome or ''):lower() then
+        nomeAtendimento, rgAtendimento = nil, nil
     end
     if nomeAtendimento and rgAtendimento and staffLogada and moduloAtivo('atendimento') then
         local atendimentoNovo = not emAtendimento
@@ -3327,18 +3356,36 @@ function samp.onServerMessage(color, text)
     local confirmaMutePendente = pendente and pendente.tipo == 'MUTE'
         and (baixo:find('mut', 1, true) or baixo:find('silenci', 1, true))
     if pendente and (ct:find('HZ%-ADMIN') or confirmaMutePendente) then
-        local alvoNick = ct:match('[Jj]ogador%(a%)%s+([%w_]+)')
+        local rgMuteConfirmado = baixo:match('jogador%(a%) de rg%s+(%d+)')
+        local alvoNick = (rgMuteConfirmado and ((cache[pendente.rg] and cache[pendente.rg].nick) or 'Desconhecido'))
+            or ct:match('[Jj]ogador%(a%)%s+([%w_]+)')
             or ct:match('[Jj]ogador%s+([%w_]+)')
             or ct:match('[Pp]layer%s+([%w_]+)')
             or ct:match('([%w_]+)%s*%[' .. tostring(pendente.rg) .. '%]')
             or (cache[pendente.rg] and cache[pendente.rg].nick)
             or 'Desconhecido'
-        if alvoNick and alvoNick:lower() ~= tostring(cfg.dados.nome):lower() then
+        -- Confirmacoes por RG nao contem nick: 'de' e parte da frase.
+        if not alvoNick or alvoNick:lower() == 'de' or alvoNick == 'Desconhecido' then
+            local conhecido = cache[tostring(pendente.rg)]
+            alvoNick = conhecido and conhecido.nick or nil
+            if tostring(rgAtual or '') == tostring(pendente.rg)
+                and nickAtual and nickAtual ~= '?' and nickAtual ~= 'Aguardando servidor' then
+                alvoNick = nickAtual
+            end
+            if not alvoNick or alvoNick:lower() == 'de' then alvoNick = 'Desconhecido' end
+        end
+        if alvoNick and alvoNick:lower() ~= tostring(cfg.dados.nome):lower()
+            and (not rgMuteConfirmado or tostring(rgMuteConfirmado) == tostring(pendente.rg)) then
             local acao = pendente.tipo == 'BAN' and 'baniu'
                 or (pendente.tipo == 'MUTE' and 'mutou' or 'prendeu')
             local url = pendente.tipo == 'BAN' and WEBHOOKS.BAN
                 or (pendente.tipo == 'MUTE' and WEBHOOKS.MUTE or WEBHOOKS.CADEIA)
             logPunicao(alvoNick, pendente.rg, pendente.tempo, pendente.motivo, acao, url, pendente.tipo)
+            if pendente.tipo == 'MUTE' then
+                local aviso = '/ac Mutei por ' .. tostring(pendente.tempo)
+                    .. ' o player ' .. tostring(alvoNick) .. ' por ' .. tostring(pendente.motivo)
+                lua_thread.create(function() wait(450) sampSendChat(aviso) end)
+            end
             pendente = nil
         end
     end
