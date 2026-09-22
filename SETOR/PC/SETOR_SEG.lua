@@ -144,7 +144,9 @@ _G.HZAvisosAC = _G.HZAvisosAC or {
     ultimoAvisoReportTempo = 0
 }
 
-function _G.HZAvisosAC.enviar(mensagem, atraso)
+function _G.HZAvisosAC.enviar(mensagem, atraso, tipoAviso)
+    -- Somente a notificacao de mute permanece habilitada.
+    if tipoAviso ~= "mute" then return end
     mensagem = tostring(mensagem or "")
     if mensagem == "" then return end
     lua_thread.create(function()
@@ -213,7 +215,7 @@ function _G.HZAvisosAC.confirmarReport(nick, id)
     local ultimoAvisoReport = tonumber(_G.HZAvisosAC.ultimoAvisoReportTempo or 0)
     if ultimoAvisoReport > 0 and agora - ultimoAvisoReport < 30 then
         _G.HZAvisosAC.aguardandoReport = false
-        sampAddChatMessage("{FFFF00}[Setor] Telagem iniciada. Aviso /ac suprimido pelo intervalo de 30 segundos.", -1)
+        -- Avisos de telagem desativados, inclusive notificacoes locais.
         return
     end
     local chave = nick:lower() .. "|" .. tostring(id or "")
@@ -1328,6 +1330,19 @@ end
 -- ======================
 -- CAPTURA DE DADOS
 -- ======================
+-- REP e reputacao, nao o ID da conexao. Resolve somente nick exato online.
+function _G.HZIdOnlinePorNickExato(nick)
+    if type(nick) ~= "string" or nick == "" or nick == "---" then return nil end
+    local busca = nick:lower()
+    for id = 0, sampGetMaxPlayerId(false) do
+        if sampIsPlayerConnected(id) then
+            local atual = sampGetPlayerNickname(id)
+            if atual and tostring(atual):lower() == busca then return tostring(id) end
+        end
+    end
+    return nil
+end
+
 local function paineltv_parse_info(text)
     paineltv_tentar_capturar_relogio(text)
     -- Inventarios e estabelecimentos tambem usam textos como "ID: 426".
@@ -1338,6 +1353,16 @@ local function paineltv_parse_info(text)
     local r = clean:match("RG:%s*(%d+)")
     local i = clean:match("ID:%s*(%d+)")
     local lvl = clean:match("LEVEL:%s*(%d+)") or clean:match("Level:%s*(%d+)")
+    if n and not i then
+        i = _G.HZIdOnlinePorNickExato(n)
+        -- Nunca conserva ID/RG de outro alvo quando o nick mudou.
+        if tostring(n):lower() ~= tostring(nickTelado):lower() then
+            idTelado, ultimoIdTelado = "---", "---"
+            if not r then rgTelado = "---" end
+            if not lvl then levelTelado = "---" end
+            ultimoScanAutomaticoChave = nil
+        end
+    end
     _G.HZVisualTextdrawAtual = _G.HZVisualTextdrawAtual
         or {id=nil, nick=nil, vida=nil, colete=nil, capacete=nil, arma=nil}
     local vidaTd = clean:match("[Vv][Ii][Dd][Aa][:%s]+([%d%.]+)")
@@ -1745,6 +1770,7 @@ local configSistema = {
         camera_staff = true,
         automacoes_staff = true,
         copiar_punicao = true,
+        ip_serial_chat = true,
         visual_staff = false,
         visual_nomes = true,
         visual_id = false,
@@ -1756,6 +1782,7 @@ local configSistema = {
 _G.HZModulosPadrao = {
     painel_tv = true, navegacao_tv = true, monitoramento = true,
     atendimento = true, camera_staff = true, automacoes_staff = true, copiar_punicao = true,
+    ip_serial_chat = true,
     visual_staff = false, visual_nomes = true, visual_id = false, visual_status = true,
     visual_arma = true
 }
@@ -1768,6 +1795,7 @@ _G.HZPermissaoMinimaModulo = {
     camera_staff = 3,
     automacoes_staff = 1,
     copiar_punicao = 1,
+    ip_serial_chat = 2,
     visual_staff = 1
 }
 
@@ -2756,7 +2784,7 @@ function _G.HZAvisosAC.comando(cmd)
         _G.HZAvisosAC.enviar(
             'Mutei por ' .. diasMute .. ' ' .. palavraDias ..
             ' o player ' .. nomeMute .. ' por ' .. motivoMute,
-            450
+            450, "mute"
         )
         return
     end
@@ -3405,6 +3433,10 @@ local function try_parse_rg_and_id_from_text(s)
 
     local rg = normalize_digits(rgRaw)
     local pid = idRaw and tonumber(idRaw) or nil
+    if not pid then
+        local nick = s:match("NICK:%s*([A-Za-z0-9_]+)")
+        if nick then pid = tonumber(_G.HZIdOnlinePorNickExato(nick)) end
+    end
 
     return rg, pid
 end
@@ -4397,6 +4429,7 @@ _G.HZModulosUI = {
     { "camera_staff", "CAMERA STAFF", "Camera livre e comandos staff." },
     { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." },
     { "copiar_punicao", "COPIAR PUNICAO", "Abre o texto pronto apos validar." },
+    { "ip_serial_chat", "IP / SERIAL NO CHAT", "Exibe no chat o IP e o serial do jogador telado." },
     { "visual_staff", "VISUAL STAFF", "Exibe informacoes dos players." }
 }
 
@@ -4501,7 +4534,7 @@ _G.HZModsCategorias = {
     { "PAINEIS", "Painel TV, atendimento e monitoramento.", { "painel_tv", "atendimento", "monitoramento" } },
     { "NAVEGACAO", "Atalhos para navegar entre jogadores.", { "navegacao_tv" } },
     { "FERRAMENTAS", "Camera, visual e rotinas automaticas da staff.",
-        { "camera_staff", "visual_staff", "automacoes_staff", "copiar_punicao" } }
+        { "camera_staff", "visual_staff", "automacoes_staff", "copiar_punicao", "ip_serial_chat" } }
 }
 
 function _G.HZTextoPunicaoCopiar(adm, nick, rg, tempo, motivo)
@@ -6800,6 +6833,18 @@ local ultimoNickRGMsgTempo = 0
 -- ============================================================
 -- MONITORAMENTO DE MENSAGENS DO CHAT (SETOR SEGURANÇA)
 -- ============================================================
+-- Aceita o formato atual e o legado sem assumir atendimentos de outro staff.
+function _G.HZIdentificarInicioAtendimento(texto, meuNome)
+    texto = tostring(texto or ""):gsub("{%x%x%x%x%x%x}", ""):gsub("%s+", " ")
+    local staff = texto:match("([%w_]+)%s+est[^%s]*%s+atendendo%s+")
+    if staff and staff:lower() ~= "voce" and staff:lower() ~= tostring(meuNome or ""):lower() then return nil end
+    local nome, rg = texto:match("atendendo%s+([%w_]+)%s*%[(%d+)%]")
+    if not nome then
+        nome, rg = texto:match("atendendo%s+o%(a%)%s+jogador%(a%)%s+([%w_]+)%s*%[(%d+)%]")
+    end
+    return nome, rg
+end
+
 local function setor_onServerMessage(color, text)
 
     -- Confirma o modo admin pelo nick local e pelo final da mensagem.
@@ -7023,8 +7068,8 @@ local function setor_onServerMessage(color, text)
     end
 
     -- INÍCIO DE ATENDIMENTO
-    if cleanText:find("atendendo o%(a%) jogador%(a%)") then
-        local nome, id = cleanText:match("jogador%(a%)%s+([%a%d_]+)%[(%d+)%]")
+    if cleanText:find("atendendo", 1, true) then
+        local nome, id = _G.HZIdentificarInicioAtendimento(cleanText, nomeAdmin)
         if nome and id then
             local atendimentoNovo = not emAtendimento
                 or tostring(idJogadorAtendido) ~= tostring(id)
@@ -7724,6 +7769,12 @@ function samp.onSendCommand(cmd)
     return r1
 end
 
+function _G.HZExibirLinhaScan(linha)
+    local texto = tostring(linha or ""):lower()
+    local sensivel = texto:find("%f[%w]ip%f[%W]") or texto:find("serial", 1, true)
+    return not sensivel or _G.HZModuloAtivo("ip_serial_chat")
+end
+
 function samp.onShowDialog(id, style, title, button1, button2, text)
     _G.HZDialogServidorSequencia = (_G.HZDialogServidorSequencia or 0) + 1
     local sequenciaDialogo = _G.HZDialogServidorSequencia
@@ -7745,7 +7796,9 @@ function samp.onShowDialog(id, style, title, button1, button2, text)
             linha = linha:gsub("{%x%x%x%x%x%x}", ""):gsub("\t", "  ")
             linha = linha:match("^%s*(.-)%s*$") or ""
             if linha ~= "" then
-                sampAddChatMessage("{FFFFFF}" .. linha, -1)
+                if _G.HZExibirLinhaScan(linha) then
+                    sampAddChatMessage("{FFFFFF}" .. linha, -1)
+                end
                 adicionouLinha = true
             end
         end
@@ -7772,11 +7825,23 @@ end
 function sampev.onSendDialogResponse(id, button, listboxId, input)
     if tonumber(id) == tonumber(_G.HZDialogPunicaoCopiarId) then
         local confirmou = button == true or button == 1 or tostring(button) == "1"
-        if confirmou and type(setClipboardText) == "function" then
-            setClipboardText(tostring(_G.HZTextoPunicaoPendente or ""))
-            sampAddChatMessage("{3EDC81}[SETOR] Registro da punicao copiado.", -1)
-        elseif confirmou then
-            sampAddChatMessage("{FF5555}[SETOR] Area de transferencia indisponivel.", -1)
+        local textoCopiar = tostring(_G.HZTextoPunicaoPendente or "")
+        -- Cancela o RPC antes de executar operacoes de interface/clipboard.
+        -- Uma falha na copia nunca deve liberar esta resposta ao servidor.
+        if confirmou then
+            lua_thread.create(function()
+                wait(0)
+                local ok, resultado = false, nil
+                if type(setClipboardText) == "function" then
+                    ok, resultado = pcall(setClipboardText, textoCopiar)
+                end
+                if ok and resultado ~= false then
+                    sampAddChatMessage("{3EDC81}[SETOR] Registro da punicao copiado.", -1)
+                else
+                    print("[SETOR COPY] Falha ao copiar registro: " .. tostring(resultado))
+                    sampAddChatMessage("{FF5555}[SETOR] Nao foi possivel copiar. Consulte /setorlogs.", -1)
+                end
+            end)
         end
         return false
     end
